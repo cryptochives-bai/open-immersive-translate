@@ -14,6 +14,49 @@ export const DEFAULT_ROLLING_WINDOW_SECONDS = 60;
  */
 export const FAILED_CUE_RETRY_MS = 30_000;
 
+// Any page can add a <track> to a <video>, so the rolling window is the
+// page's lever on the user's translation service. Keep it small and slow.
+export const MAX_WINDOW_CUES = 30;
+export const MAX_WINDOW_CHARS = 3_000;
+export const WINDOW_INTERVAL_MS = 1_000;
+export const PAGE_CUES_PER_MINUTE = 240;
+/** Upper bound for the per-engine translation and failure maps. */
+export const MAX_REMEMBERED_CUES = 2_000;
+
+/**
+ * A per-page allowance shared by every SubtitleEngine, so spawning more
+ * videos or swapping tracks every second does not multiply it.
+ */
+export class CueBudget {
+  private windowStart = -Infinity;
+  private used = 0;
+
+  constructor(private readonly perMinute = PAGE_CUES_PER_MINUTE) {}
+
+  take(requested: number, now: number): number {
+    if (now - this.windowStart >= 60_000) {
+      this.windowStart = now;
+      this.used = 0;
+    }
+    const granted = Math.max(
+      0,
+      Math.min(requested, this.perMinute - this.used),
+    );
+    this.used += granted;
+    return granted;
+  }
+}
+
+const pageCueBudget = new CueBudget();
+
+function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > MAX_REMEMBERED_CUES) {
+    map.delete(map.keys().next().value as K);
+  }
+}
+
 const SENTENCE_END = /[.!?。！？…][\]})"'”’]*$/;
 
 function validCue(cue: SubtitleCue): boolean {
@@ -88,6 +131,7 @@ export interface SubtitleEngineOptions {
   rollingWindowSeconds?: number;
   cache?: Map<string, string>;
   now?: () => number;
+  budget?: CueBudget;
 }
 
 /** Translate and cache a timed cue stream for live rendering. */
@@ -96,6 +140,8 @@ export class SubtitleEngine {
   private readonly inFlight = new Map<string, Promise<string>>();
   private readonly failedAt = new Map<string, number>();
   private readonly now: () => number;
+  private readonly budget: CueBudget;
+  private lastWindowAt = -Infinity;
   private readonly listeners = new Set<
     (cues: readonly BilingualSubtitleCue[]) => void
   >();
@@ -113,6 +159,7 @@ export class SubtitleEngine {
       options.rollingWindowSeconds ?? DEFAULT_ROLLING_WINDOW_SECONDS;
     this.cache = options.cache ?? new Map();
     this.now = options.now ?? Date.now;
+    this.budget = options.budget ?? pageCueBudget;
   }
 
   get bilingualCues(): readonly BilingualSubtitleCue[] {
@@ -158,11 +205,27 @@ export class SubtitleEngine {
 
   async updateCurrentTime(currentTime: number): Promise<void> {
     if (this.preTranslation) return;
+    const now = this.now();
+    if (now - this.lastWindowAt < WINDOW_INTERVAL_MS) return;
+    this.lastWindowAt = now;
+
     const windowEnd = currentTime + this.rollingWindowSeconds;
-    const indices = this.cues.flatMap((cue, index) =>
-      cue.end >= currentTime && cue.start <= windowEnd ? [index] : [],
-    );
-    await this.translateIndices(indices, this.generation);
+    const indices: number[] = [];
+    let chars = 0;
+    for (const [index, cue] of this.cues.entries()) {
+      if (cue.end < currentTime || cue.start > windowEnd) continue;
+      if (cue.translation !== undefined) continue;
+      if (
+        indices.length >= MAX_WINDOW_CUES ||
+        chars + cue.text.length > MAX_WINDOW_CHARS
+      ) {
+        break;
+      }
+      indices.push(index);
+      chars += cue.text.length;
+    }
+    const granted = this.budget.take(indices.length, now);
+    await this.translateIndices(indices.slice(0, granted), this.generation);
   }
 
   activeCue(currentTime: number): BilingualSubtitleCue | undefined {
@@ -234,11 +297,11 @@ export class SubtitleEngine {
       .then(
         (translation) => {
           this.failedAt.delete(key);
-          this.cache.set(key, translation);
+          remember(this.cache, key, translation);
           return translation;
         },
         (error: unknown) => {
-          this.failedAt.set(key, this.now());
+          remember(this.failedAt, key, this.now());
           throw error;
         },
       )

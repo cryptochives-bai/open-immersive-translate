@@ -16,6 +16,7 @@ import { installCaptureBridge } from "./capture-bridge";
 import { SubtitleEngine } from "./engine";
 import { subtitleText } from "./i18n";
 import { SubtitleRenderer } from "./renderer";
+import { isUserEvent } from "../trusted";
 
 export const TOGGLE_SUBTITLE_PRETRANSLATION_MESSAGE =
   "toggleVideoSubtitlePreTranslation";
@@ -31,6 +32,37 @@ function resolveConfig(ctx: FeatureContext): SubtitleConfig {
   const raw = ctx.config.subtitle as FeatureContext["config"]["subtitle"] &
     Partial<SubtitleConfig>;
   return { ...DEFAULT_SUBTITLE_CONFIG, ...raw };
+}
+
+// Set once this content script sees a real (trusted) pointer or key press on
+// the page. navigator.userActivation is not used: browser-initiated
+// navigations can already count as activation, and pages cannot forge
+// isTrusted.
+let pageInteracted = false;
+let watchingInteraction = false;
+
+function watchForUserInteraction(): void {
+  if (watchingInteraction) return;
+  watchingInteraction = true;
+  const mark = (event: Event): void => {
+    if (isUserEvent(event)) pageInteracted = true;
+  };
+  for (const type of ["pointerdown", "keydown"]) {
+    document.addEventListener(type, mark, { capture: true, passive: true });
+  }
+}
+
+/**
+ * Translate only while the media plays on a page the user has interacted
+ * with. Otherwise any page could add a muted, autoplaying <video> with a
+ * caption track and spend the user's translation service with no
+ * interaction at all.
+ */
+export function userIsWatching(
+  media: Pick<HTMLMediaElement, "paused">,
+  interacted = pageInteracted,
+): boolean {
+  return !media.paused && interacted;
 }
 
 function cueFingerprint(cues: readonly SubtitleCue[]): string {
@@ -55,6 +87,7 @@ export function initSubtitles(ctx: FeatureContext): () => void {
     return () => undefined;
   }
 
+  watchForUserInteraction();
   const adapters = matchingSubtitleAdapters(window.location.href);
   const captureHub = new SubtitleCaptureHub();
   const sessions = new Map<HTMLMediaElement, SubtitleSession>();
@@ -71,9 +104,9 @@ export function initSubtitles(ctx: FeatureContext): () => void {
     if (existing?.fingerprint === fingerprint) return;
     existing?.dispose();
 
-    const engine = new SubtitleEngine(ctx, {
-      preTranslation: config.preTranslation,
-    });
+    // Pre-translation waits for the same gate as the rolling window below.
+    const engine = new SubtitleEngine(ctx, { preTranslation: false });
+    let preTranslationApplied = false;
     const renderer = new SubtitleRenderer(media, config, {
       experimental: track.experimental,
       experimentalLabel: subtitleText("experimental"),
@@ -88,10 +121,17 @@ export function initSubtitles(ctx: FeatureContext): () => void {
     });
     const unsubscribe = engine.subscribe((cues) => renderer.setCues(cues));
     const updateRollingWindow = (): void => {
+      if (!userIsWatching(media)) return;
+      if (config.preTranslation && !preTranslationApplied) {
+        preTranslationApplied = true;
+        void engine.setPreTranslation(true).catch(() => undefined);
+        return;
+      }
       void engine.updateCurrentTime(media.currentTime).catch(() => undefined);
     };
     media.addEventListener("timeupdate", updateRollingWindow);
     media.addEventListener("seeking", updateRollingWindow);
+    media.addEventListener("play", updateRollingWindow);
 
     const session: SubtitleSession = {
       engine,
@@ -101,6 +141,7 @@ export function initSubtitles(ctx: FeatureContext): () => void {
         unsubscribe();
         media.removeEventListener("timeupdate", updateRollingWindow);
         media.removeEventListener("seeking", updateRollingWindow);
+        media.removeEventListener("play", updateRollingWindow);
         renderer.dispose();
       },
     };

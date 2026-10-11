@@ -502,3 +502,151 @@ test("ignores page-forged input, UI clicks, and frame commands", async ({
     await context.close();
   }
 });
+
+async function cachedTranslationCount(worker: Worker): Promise<number> {
+  return worker.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const open = indexedDB.open("bilingual-translator-cache");
+        open.onerror = () => resolve(0);
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains("translations")) {
+            db.close();
+            resolve(0);
+            return;
+          }
+          const count = db
+            .transaction("translations")
+            .objectStore("translations")
+            .count();
+          count.onsuccess = () => {
+            db.close();
+            resolve(count.result);
+          };
+          count.onerror = () => resolve(0);
+        };
+      }),
+  );
+}
+
+test("a page's caption track does not spend translations without the user", async ({
+  playwright,
+}) => {
+  const { context, worker } = await launchExtension(playwright);
+  try {
+    await selectMockService(worker);
+    const page = await context.newPage();
+    await page.goto(`${origin}/article.html`);
+    await expect
+      .poll(() => contentState(worker))
+      .toMatchObject({ ready: true });
+    const before = await cachedTranslationCount(worker);
+
+    await page.evaluate(() => {
+      const cues = Array.from({ length: 300 }, (_, index) => {
+        const start = index * 0.19;
+        const stamp = (seconds: number) =>
+          `00:00:${seconds.toFixed(3).padStart(6, "0")}`;
+        return `${stamp(start)} --> ${stamp(start + 0.19)}\nAttacker sentence number ${index}.`;
+      });
+      const vtt = `WEBVTT\n\n${cues.join("\n\n")}\n`;
+      const video = document.createElement("video");
+      video.muted = true;
+      const track = document.createElement("track");
+      track.kind = "subtitles";
+      track.default = true;
+      track.src = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
+      video.append(track);
+      document.body.append(video);
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.querySelector("video")?.textTracks[0]?.cues?.length ?? 0,
+        ),
+      )
+      .toBeGreaterThan(250);
+    await page.waitForTimeout(3_000);
+
+    expect(await cachedTranslationCount(worker)).toBe(before);
+
+    // Even media that autoplays (muted) must wait for a real user action.
+    await page.evaluate(() => {
+      const seconds = 60;
+      const rate = 8_000;
+      const bytes = new Uint8Array(44 + seconds * rate).fill(128);
+      const view = new DataView(bytes.buffer);
+      const text = (offset: number, value: string) =>
+        [...value].forEach((char, index) =>
+          view.setUint8(offset + index, char.charCodeAt(0)),
+        );
+      text(0, "RIFF");
+      view.setUint32(4, 36 + seconds * rate, true);
+      text(8, "WAVEfmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, rate, true);
+      view.setUint32(28, rate, true);
+      view.setUint16(32, 1, true);
+      view.setUint16(34, 8, true);
+      text(36, "data");
+      view.setUint32(40, seconds * rate, true);
+      const audio = document.createElement("audio");
+      audio.muted = true;
+      audio.autoplay = true;
+      audio.src = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const track = document
+        .querySelector("video track")!
+        .cloneNode() as HTMLTrackElement;
+      audio.append(track);
+      document.body.append(audio);
+      void audio.play();
+    });
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector("audio")!.paused))
+      .toBe(false);
+    await page.waitForTimeout(3_000);
+    expect(await cachedTranslationCount(worker)).toBe(before);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an invisible, enlarged float ball does not turn a click into page translation", async ({
+  playwright,
+}) => {
+  const { context, worker } = await launchExtension(playwright);
+  try {
+    await selectMockService(worker);
+    await worker.evaluate(async () => {
+      const api = (globalThis as unknown as ExtensionWorkerGlobal).chrome;
+      const { config } = (await api.storage.local.get("config")) as {
+        config: Record<string, unknown>;
+      };
+      await api.storage.local.set({
+        config: { ...config, floatBall: { enabled: true, position: "right" } },
+      });
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/article.html`);
+    await expect
+      .poll(() => contentState(worker))
+      .toMatchObject({ ready: true });
+    await expect(page.locator("[data-imt='float-ball']")).toHaveCount(1);
+    await page.addStyleTag({
+      content:
+        "[data-imt='float-ball']{opacity:0!important;transform:scale(400)!important;transform-origin:50% 50%!important}",
+    });
+
+    const viewport = page.viewportSize()!;
+    await page.mouse.click(viewport.width / 2, viewport.height / 2);
+    await page.waitForTimeout(1_500);
+
+    await expect(page.locator("font[data-imt='target']")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});

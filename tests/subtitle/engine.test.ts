@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("webextension-polyfill", () => ({ default: {} }));
+
 import {
   batchCueSentences,
+  CueBudget,
   FAILED_CUE_RETRY_MS,
+  MAX_WINDOW_CUES,
   SubtitleEngine,
+  WINDOW_INTERVAL_MS,
 } from "../../src/content/features/subtitle/engine";
+import { userIsWatching } from "../../src/content/features/subtitle";
 import type { FeatureContext } from "../../src/content/features/context";
 
 function context(translateText = vi.fn(async (text: string) => `译:${text}`)) {
@@ -87,8 +93,9 @@ describe("SubtitleEngine", () => {
     });
     await engine.load([{ start: 0, end: 2, text: "Now." }]);
 
+    // Past the 1 s window throttle each time, so only the cooldown holds it.
     for (const time of [0.25, 0.5, 0.75, 1]) {
-      now += 250;
+      now += WINDOW_INTERVAL_MS;
       await engine.updateCurrentTime(time);
     }
     expect(translateText).toHaveBeenCalledTimes(1);
@@ -104,5 +111,51 @@ describe("SubtitleEngine", () => {
     await engine.load([{ start: 0, end: 2, text: "Now." }]);
     expect(engine.isPreTranslationEnabled).toBe(false);
     expect(translateText).not.toHaveBeenCalled();
+  });
+
+  it("caps each rolling-window update and throttles it", async () => {
+    let now = 0;
+    const translateText = vi.fn(async (text: string) => `译:${text}`);
+    const engine = new SubtitleEngine(context(translateText), {
+      now: () => now,
+      budget: new CueBudget(10_000),
+    });
+    await engine.load(
+      Array.from({ length: 300 }, (_, index) => ({
+        start: index * 0.19,
+        end: index * 0.19 + 0.19,
+        text: `Cue ${index}.`,
+      })),
+    );
+
+    await engine.updateCurrentTime(0);
+    expect(translateText).toHaveBeenCalledTimes(MAX_WINDOW_CUES);
+    now += 200;
+    await engine.updateCurrentTime(0.2);
+    expect(translateText).toHaveBeenCalledTimes(MAX_WINDOW_CUES);
+  });
+
+  it("shares one per-minute budget across engines on the page", async () => {
+    const budget = new CueBudget(40);
+    const translateText = vi.fn(async (text: string) => `译:${text}`);
+    const cues = Array.from({ length: 60 }, (_, index) => ({
+      start: index,
+      end: index + 0.9,
+      text: `Line ${index}`,
+    }));
+    for (const suffix of ["a", "b", "c"]) {
+      const engine = new SubtitleEngine(context(translateText), { budget });
+      await engine.load(
+        cues.map((cue) => ({ ...cue, text: `${cue.text} ${suffix}.` })),
+      );
+      await engine.updateCurrentTime(0);
+    }
+    expect(translateText).toHaveBeenCalledTimes(40);
+  });
+
+  it("translates only while the media plays on a page the user touched", () => {
+    expect(userIsWatching({ paused: true }, true)).toBe(false);
+    expect(userIsWatching({ paused: false }, false)).toBe(false);
+    expect(userIsWatching({ paused: false }, true)).toBe(true);
   });
 });

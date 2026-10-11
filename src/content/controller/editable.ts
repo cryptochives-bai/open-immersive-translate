@@ -81,7 +81,9 @@ export function installEditableTranslations(
     translation.focus();
   };
   const onKeyDown = (event: Event): void => {
-    if (!editing || !(event instanceof KeyboardEvent)) return;
+    if (!editing || !(event instanceof KeyboardEvent) || !isUserEvent(event)) {
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       finish(false);

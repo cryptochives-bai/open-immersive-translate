@@ -301,6 +301,13 @@ describe("ChatGPT OAuth tokens", () => {
       code: "RATE_LIMIT",
       details: { status: 429, retryAfter: 9 },
     });
+
+    // The 429 starts a backoff: the next refresh does not hit the network.
+    const blocked = vi.fn(async () => jsonResponse({}, 200));
+    await expect(
+      refreshChatgptOauthTokens({ fetch: blocked }),
+    ).rejects.toMatchObject({ code: "RATE_LIMIT" });
+    expect(blocked).not.toHaveBeenCalled();
   });
 
   it("shares one refresh request between concurrent callers", async () => {

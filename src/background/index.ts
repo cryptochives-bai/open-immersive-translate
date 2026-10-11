@@ -224,7 +224,9 @@ browser.runtime.onMessage.addListener(
       case "setConfig":
         return saveConfig(request.patch);
       case "translate":
-        runTranslation(request, sender.tab?.incognito === true);
+        // No sender tab (the side panel) means we cannot tell whether the
+        // window is private, so keep that text out of the disk cache too.
+        runTranslation(request, sender.tab ? sender.tab.incognito : true);
         return Promise.resolve({ accepted: true });
       case "cancel":
         cancel(request.tabId, request.requestId);

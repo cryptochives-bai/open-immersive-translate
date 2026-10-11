@@ -1,6 +1,7 @@
 import type { Paragraph, Rule, TranslationMode } from "../../shared/types";
 
 import themeCss from "./themes.css?raw";
+import { isUserEvent } from "../features/trusted";
 
 export type TranslationTheme =
   | "none"
@@ -355,7 +356,9 @@ export function setError(
   retryButton.title = "Retry";
   retryButton.setAttribute("aria-label", "Retry translation");
   retryButton.textContent = "↻";
-  retryButton.addEventListener("click", retry);
+  retryButton.addEventListener("click", (event) => {
+    if (isUserEvent(event)) retry();
+  });
   target.append(retryButton);
   appendTarget(paragraph, target, "smart", state);
 }

@@ -43,6 +43,8 @@ interface StoredAuthState {
   tokens?: ChatgptOauthTokens;
   pending?: PendingLogin;
   error?: { message: string; retryAfter?: number };
+  /** No token refresh before this time (ms) after an auth or 429 failure. */
+  refreshRetryAt?: number;
 }
 
 interface AuthDependencies {
@@ -112,6 +114,9 @@ function parseStoredState(value: unknown): StoredAuthState {
             : 0,
       };
     }
+  }
+  if (typeof value.refreshRetryAt === "number") {
+    result.refreshRetryAt = value.refreshRetryAt;
   }
   if (isRecord(value.error)) {
     const message = nonEmptyString(value.error.message);
@@ -258,12 +263,18 @@ async function responseMessage(response: Response, fallback: string) {
   return fallback;
 }
 
+/**
+ * Record a login error while keeping whatever tokens are stored *now*.
+ * Callers used to pass tokens read before their network request, so a
+ * refresh that rotated the tokens in the meantime was overwritten with the
+ * old, already-rotated refresh token.
+ */
 async function storeError(
   message: string,
-  tokens?: ChatgptOauthTokens,
   retryAfter?: number,
 ): Promise<ChatgptOauthStatus> {
   await clearPoll();
+  const { tokens } = await readState();
   const state: StoredAuthState = {
     ...(tokens ? { tokens } : {}),
     error: { message, ...(retryAfter ? { retryAfter } : {}) },
@@ -277,7 +288,7 @@ export async function getChatgptOauthStatus(
 ): Promise<ChatgptOauthStatus> {
   const state = await readState();
   if (state.pending && now - state.pending.startedAt >= LOGIN_TIMEOUT_MS) {
-    return storeError("登录已在 15 分钟后超时。", state.tokens);
+    return storeError("登录已在 15 分钟后超时。");
   }
   return statusFromState(state);
 }
@@ -299,7 +310,6 @@ export async function startChatgptOauth(
     } catch (error) {
       return storeError(
         error instanceof Error ? error.message : "无法请求登录代码。",
-        previous.tokens,
       );
     }
     if (response.status !== 429) break;
@@ -319,7 +329,6 @@ export async function startChatgptOauth(
             `请求登录代码失败（HTTP ${response.status}）。`,
           )
         : "无法请求登录代码。",
-      previous.tokens,
       retryAfter ? runtime.now() + retryAfter * 1_000 : undefined,
     );
   }
@@ -328,7 +337,7 @@ export async function startChatgptOauth(
   try {
     payload = await response.json();
   } catch {
-    return storeError("登录代码响应不是有效 JSON。", previous.tokens);
+    return storeError("登录代码响应不是有效 JSON。");
   }
   const deviceAuthId = isRecord(payload)
     ? nonEmptyString(payload.device_auth_id)
@@ -337,7 +346,7 @@ export async function startChatgptOauth(
     ? nonEmptyString(payload.user_code)
     : undefined;
   if (!deviceAuthId || !userCode) {
-    return storeError("登录代码响应缺少必要字段。", previous.tokens);
+    return storeError("登录代码响应缺少必要字段。");
   }
   const interval =
     isRecord(payload) && Number.isFinite(Number(payload.interval))
@@ -385,7 +394,6 @@ async function exchangeAuthorizationCode(
   } catch (error) {
     return storeError(
       error instanceof Error ? error.message : "令牌交换失败。",
-      previous.tokens,
     );
   }
   if (!response.ok) {
@@ -395,7 +403,6 @@ async function exchangeAuthorizationCode(
         response,
         `令牌交换失败（HTTP ${response.status}）。`,
       ),
-      previous.tokens,
       retryAfter ? runtime.now() + retryAfter * 1_000 : undefined,
     );
   }
@@ -404,7 +411,7 @@ async function exchangeAuthorizationCode(
   try {
     payload = await response.json();
   } catch {
-    return storeError("令牌交换响应不是有效 JSON。", previous.tokens);
+    return storeError("令牌交换响应不是有效 JSON。");
   }
   const accessToken = isRecord(payload)
     ? nonEmptyString(payload.access_token)
@@ -413,7 +420,7 @@ async function exchangeAuthorizationCode(
     ? nonEmptyString(payload.refresh_token)
     : undefined;
   if (!accessToken || !refreshToken) {
-    return storeError("令牌交换响应缺少访问令牌或刷新令牌。", previous.tokens);
+    return storeError("令牌交换响应缺少访问令牌或刷新令牌。");
   }
   const tokens: ChatgptOauthTokens = {
     accessToken,
@@ -437,7 +444,7 @@ export async function pollChatgptOauth(
   const pending = state.pending;
   if (!pending) return statusFromState(state);
   if (runtime.now() - pending.startedAt >= LOGIN_TIMEOUT_MS) {
-    return storeError("登录已在 15 分钟后超时。", state.tokens);
+    return storeError("登录已在 15 分钟后超时。");
   }
 
   let response: Response;
@@ -453,7 +460,6 @@ export async function pollChatgptOauth(
   } catch (error) {
     return storeError(
       error instanceof Error ? error.message : "登录状态查询失败。",
-      state.tokens,
     );
   }
 
@@ -476,7 +482,6 @@ export async function pollChatgptOauth(
         response,
         `登录状态查询失败（HTTP ${response.status}）。`,
       ),
-      state.tokens,
     );
   }
 
@@ -484,7 +489,7 @@ export async function pollChatgptOauth(
   try {
     payload = await response.json();
   } catch {
-    return storeError("登录状态响应不是有效 JSON。", state.tokens);
+    return storeError("登录状态响应不是有效 JSON。");
   }
   const authorizationCode = isRecord(payload)
     ? nonEmptyString(payload.authorization_code)
@@ -493,7 +498,7 @@ export async function pollChatgptOauth(
     ? nonEmptyString(payload.code_verifier)
     : undefined;
   if (!authorizationCode || !codeVerifier) {
-    return storeError("登录状态响应缺少授权代码或校验码。", state.tokens);
+    return storeError("登录状态响应缺少授权代码或校验码。");
   }
   return exchangeAuthorizationCode(
     authorizationCode,
@@ -504,8 +509,8 @@ export async function pollChatgptOauth(
 }
 
 export async function cancelChatgptOauth(): Promise<ChatgptOauthStatus> {
-  const state = await readState();
   await clearPoll();
+  const state = await readState();
   const next = state.tokens ? { tokens: state.tokens } : {};
   await writeState(next);
   return statusFromState(next);
@@ -519,6 +524,9 @@ export async function logoutChatgptOauth(): Promise<ChatgptOauthStatus> {
 
 let inflightRefresh: Promise<ChatgptOauthTokens> | undefined;
 
+/** After an auth or rate-limit failure, leave the refresh token alone this long. */
+const REFRESH_FAILURE_BACKOFF_MS = 60_000;
+
 /**
  * Exchange the refresh token for new tokens.
  *
@@ -529,10 +537,50 @@ let inflightRefresh: Promise<ChatgptOauthTokens> | undefined;
 export function refreshChatgptOauthTokens(
   overrides: Partial<AuthDependencies> = {},
 ): Promise<ChatgptOauthTokens> {
-  inflightRefresh ??= performRefresh(dependencies(overrides)).finally(() => {
-    inflightRefresh = undefined;
-  });
+  inflightRefresh ??= refreshWithBackoff(dependencies(overrides)).finally(
+    () => {
+      inflightRefresh = undefined;
+    },
+  );
   return inflightRefresh;
+}
+
+/**
+ * A 403 keeps the login (it may be a transient WAF block) and a 429 asks us
+ * to slow down; without a backoff every translation batch would hit the
+ * token endpoint again with the same refresh token.
+ */
+async function refreshWithBackoff(
+  runtime: AuthDependencies,
+): Promise<ChatgptOauthTokens> {
+  const before = await readState();
+  if (
+    before.refreshRetryAt !== undefined &&
+    runtime.now() < before.refreshRetryAt
+  ) {
+    throw new TranslateError(
+      "rate_limit",
+      "ChatGPT 令牌刷新暂时受阻，请稍后再试。",
+      { serviceId: "chatgpt", retryable: false },
+    );
+  }
+  try {
+    return await performRefresh(runtime);
+  } catch (error) {
+    const code = error instanceof TranslateError ? error.code : undefined;
+    const current = await readState();
+    if (
+      (code === "AUTH" || code === "RATE_LIMIT") &&
+      before.tokens &&
+      current.tokens?.refreshToken === before.tokens.refreshToken
+    ) {
+      await writeState({
+        ...current,
+        refreshRetryAt: runtime.now() + REFRESH_FAILURE_BACKOFF_MS,
+      });
+    }
+    throw error;
+  }
 }
 
 async function performRefresh(
@@ -672,7 +720,7 @@ export async function resumeChatgptOauthPolling(): Promise<void> {
   const state = await readState();
   if (!state.pending) return;
   if (Date.now() - state.pending.startedAt >= LOGIN_TIMEOUT_MS) {
-    await storeError("登录已在 15 分钟后超时。", state.tokens);
+    await storeError("登录已在 15 分钟后超时。");
     return;
   }
   await schedulePoll(state.pending);

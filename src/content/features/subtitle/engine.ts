@@ -7,6 +7,12 @@ import type { FeatureContext } from "../context";
 export const MAX_CUES_PER_BATCH = 50;
 export const MAX_CHARS_PER_BATCH = 4_000;
 export const DEFAULT_ROLLING_WINDOW_SECONDS = 60;
+/**
+ * The rolling window re-runs on every timeupdate (about 4 Hz). Without a
+ * cooldown, a failing service (bad key, offline, HTTP 429) would get every
+ * untranslated cue in the window resent several times a second.
+ */
+export const FAILED_CUE_RETRY_MS = 30_000;
 
 const SENTENCE_END = /[.!?。！？…][\]})"'”’]*$/;
 
@@ -81,12 +87,15 @@ export interface SubtitleEngineOptions {
   preTranslation?: boolean;
   rollingWindowSeconds?: number;
   cache?: Map<string, string>;
+  now?: () => number;
 }
 
 /** Translate and cache a timed cue stream for live rendering. */
 export class SubtitleEngine {
   private readonly cache: Map<string, string>;
   private readonly inFlight = new Map<string, Promise<string>>();
+  private readonly failedAt = new Map<string, number>();
+  private readonly now: () => number;
   private readonly listeners = new Set<
     (cues: readonly BilingualSubtitleCue[]) => void
   >();
@@ -103,6 +112,7 @@ export class SubtitleEngine {
     this.rollingWindowSeconds =
       options.rollingWindowSeconds ?? DEFAULT_ROLLING_WINDOW_SECONDS;
     this.cache = options.cache ?? new Map();
+    this.now = options.now ?? Date.now;
   }
 
   get bilingualCues(): readonly BilingualSubtitleCue[] {
@@ -214,13 +224,24 @@ export class SubtitleEngine {
     if (cached !== undefined) return Promise.resolve(cached);
     const pending = this.inFlight.get(key);
     if (pending) return pending;
+    const failed = this.failedAt.get(key);
+    if (failed !== undefined && this.now() - failed < FAILED_CUE_RETRY_MS) {
+      return Promise.reject(new Error("Subtitle cue is cooling down."));
+    }
 
     const request = this.ctx
       .translateText(text, from, to)
-      .then((translation) => {
-        this.cache.set(key, translation);
-        return translation;
-      })
+      .then(
+        (translation) => {
+          this.failedAt.delete(key);
+          this.cache.set(key, translation);
+          return translation;
+        },
+        (error: unknown) => {
+          this.failedAt.set(key, this.now());
+          throw error;
+        },
+      )
       .finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, request);
     return request;

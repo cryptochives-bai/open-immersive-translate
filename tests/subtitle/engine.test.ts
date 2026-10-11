@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   batchCueSentences,
+  FAILED_CUE_RETRY_MS,
   SubtitleEngine,
 } from "../../src/content/features/subtitle/engine";
 import type { FeatureContext } from "../../src/content/features/context";
@@ -73,5 +74,35 @@ describe("SubtitleEngine", () => {
     await engine.setPreTranslation(true);
     expect(engine.bilingualCues[2].translation).toBe("译:Later.");
     expect(engine.activeCue(31)?.text).toBe("Later.");
+  });
+
+  it("does not resend a failed cue on every timeupdate", async () => {
+    let now = 0;
+    const translateText = vi.fn(async () => {
+      throw new Error("HTTP 429");
+    });
+    const engine = new SubtitleEngine(context(translateText), {
+      preTranslation: false,
+      now: () => now,
+    });
+    await engine.load([{ start: 0, end: 2, text: "Now." }]);
+
+    for (const time of [0.25, 0.5, 0.75, 1]) {
+      now += 250;
+      await engine.updateCurrentTime(time);
+    }
+    expect(translateText).toHaveBeenCalledTimes(1);
+
+    now += FAILED_CUE_RETRY_MS;
+    await engine.updateCurrentTime(1.25);
+    expect(translateText).toHaveBeenCalledTimes(2);
+  });
+
+  it("defaults to translating only the rolling window", async () => {
+    const translateText = vi.fn(async (text: string) => `译:${text}`);
+    const engine = new SubtitleEngine(context(translateText));
+    await engine.load([{ start: 0, end: 2, text: "Now." }]);
+    expect(engine.isPreTranslationEnabled).toBe(false);
+    expect(translateText).not.toHaveBeenCalled();
   });
 });

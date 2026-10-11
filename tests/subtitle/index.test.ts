@@ -48,6 +48,15 @@ describe("subtitle feature initialization", () => {
         subtitle: expect.objectContaining({ preTranslation: true }),
       },
     });
+    for (const listener of messageListeners) {
+      listener({ type: TOGGLE_SUBTITLE_PRETRANSLATION_MESSAGE });
+    }
+    expect(browserMock.runtime.sendMessage).toHaveBeenLastCalledWith({
+      type: "setConfig",
+      patch: {
+        subtitle: expect.objectContaining({ preTranslation: false }),
+      },
+    });
     dispose();
   });
 });

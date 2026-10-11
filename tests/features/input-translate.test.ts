@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { FeatureContext } from "../../src/content/features/context";
+import { isUserEvent } from "../../src/content/features/trusted";
 import {
   init,
   isTripleSpaceTrigger,
   parseTranslationInput,
   resolveAutoTargetLanguage,
 } from "../../src/content/features/input-translate";
+
+// jsdom events are never trusted; the gate itself is covered below.
+vi.mock("../../src/content/features/trusted", () => ({
+  isUserEvent: vi.fn(() => true),
+}));
 
 function context(
   translateText = vi.fn().mockResolvedValue("translated"),
@@ -28,11 +34,18 @@ afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.mocked(isUserEvent).mockImplementation(() => true);
 });
+
+function pressEnter(field: Element): void {
+  field.dispatchEvent(
+    new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
+  );
+}
 
 describe("input translation", () => {
   it("parses an optional language prefix", () => {
-    expect(parseTranslationInput("/en 你好", "fr")).toEqual({
+    expect(parseTranslationInput("//en 你好", "fr")).toEqual({
       text: "你好",
       targetLanguage: "en",
     });
@@ -112,7 +125,7 @@ describe("input translation", () => {
 
   it("resolves configurable aliases and automatic Chinese/English targets", async () => {
     expect(
-      parseTranslationInput("/jp こんにちは", "en", { ja: ["jp"] }),
+      parseTranslationInput("//jp こんにちは", "en", { ja: ["jp"] }),
     ).toEqual({ text: "こんにちは", targetLanguage: "ja" });
     expect(resolveAutoTargetLanguage("你好")).toBe("en");
     expect(resolveAutoTargetLanguage("hello")).toBe("zh-CN");
@@ -170,6 +183,65 @@ describe("input translation", () => {
     await Promise.resolve();
 
     expect(translateText).toHaveBeenCalledWith("hello", "auto", "en");
+    dispose();
+  });
+
+  it("leaves single-slash chat commands alone", async () => {
+    const input = document.createElement("textarea");
+    input.value = "/remind me in 5 minutes";
+    document.body.append(input);
+    const translateText = vi.fn().mockResolvedValue("unused");
+    const dispose = init(context(translateText));
+
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Enter",
+    });
+    input.dispatchEvent(event);
+    await Promise.resolve();
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(translateText).not.toHaveBeenCalled();
+    expect(input.value).toBe("/remind me in 5 minutes");
+    dispose();
+  });
+
+  it("ignores keyboard events forged by page scripts", async () => {
+    vi.mocked(isUserEvent).mockImplementation(() => false);
+    const input = document.createElement("input");
+    input.value = "//leak this through the user's service";
+    document.body.append(input);
+    const translateText = vi.fn().mockResolvedValue("unused");
+    const dispose = init(context(translateText));
+
+    pressEnter(input);
+    await Promise.resolve();
+
+    expect(translateText).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it.each([
+    ["password", undefined],
+    ["text", "one-time-code"],
+    ["text", "current-password"],
+    ["text", "cc-number"],
+    ["email", undefined],
+  ])("never reads %s fields with autocomplete=%s", async (type, autocomplete) => {
+    const input = document.createElement("input");
+    input.type = type;
+    if (autocomplete) input.setAttribute("autocomplete", autocomplete);
+    input.value = "//secret";
+    document.body.append(input);
+    const translateText = vi.fn().mockResolvedValue("unused");
+    const dispose = init(context(translateText));
+
+    pressEnter(input);
+    await Promise.resolve();
+
+    expect(translateText).not.toHaveBeenCalled();
+    expect(input.value).toBe("//secret");
     dispose();
   });
 });

@@ -39,7 +39,7 @@ export function withKDefaults(value: unknown): KConfig {
       enabled: true,
       trigger: "//",
       triggerMode: "both",
-      startingTriggerKey: "/",
+      startingTriggerKey: "//",
       trailingTriggerKey: " ",
       trailingTriggerCount: 3,
       trailingTriggerTimeoutMs: 1_500,

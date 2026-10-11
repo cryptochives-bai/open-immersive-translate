@@ -31,6 +31,7 @@ import { observeMutations } from "../observe/mutation";
 import { translateImmediately } from "../observe/immediate";
 import { observeViewport, type ViewportObserver } from "../observe/viewport";
 import { decodePlaceholders } from "../extract/placeholder";
+import { isSensitiveField } from "../features/sensitive-field";
 import {
   injectStyles,
   markTranslated,
@@ -271,6 +272,7 @@ export class TranslationController implements PageControllerActions {
       (field instanceof HTMLElement && field.isContentEditable)
     ))
       return;
+    if (isSensitiveField(field)) return;
     const text =
       field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
         ? field.value

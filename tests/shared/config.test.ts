@@ -10,6 +10,19 @@ import {
 } from "../../src/shared/config";
 
 describe("configuration migration", () => {
+  it("defaults the input trigger to // and upgrades the old single-slash default", () => {
+    expect(DEFAULT_CONFIG.input.startingTriggerKey).toBe("//");
+    const migrated = migrateConfig({
+      version: 3,
+      input: { enabled: true, startingTriggerKey: "/" },
+    });
+    expect(migrated.input.startingTriggerKey).toBe("//");
+    expect(
+      migrateConfig({ version: 3, input: { startingTriggerKey: ";;" } }).input
+        .startingTriggerKey,
+    ).toBe(";;");
+  });
+
   it("applies and validates ChatGPT reasoning defaults", () => {
     expect(serviceConfigSchema.parse({ kind: "chatgpt" })).toMatchObject({
       reasoningEffort: "low",

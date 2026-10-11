@@ -10,7 +10,7 @@ import { DEFAULT_SUBTITLE_CONFIG, type SubtitleConfig } from "./subtitle-types";
 import type { Config, ConfigPatch, Rule, ServiceConfig } from "./types";
 
 /** Current persisted configuration format. */
-export const CONFIG_VERSION = 3;
+export const CONFIG_VERSION = 4;
 
 /** Storage key containing the complete configuration object. */
 export const CONFIG_STORAGE_KEY = "config";
@@ -254,7 +254,7 @@ export const configSchema: z.ZodType<Config> = z.object({
       trigger: z.enum(["//", "space3"]).default("//"),
       targetLanguage: langCodeSchema.optional(),
       triggerMode: z.enum(["prefix", "trailing", "both"]).default("both"),
-      startingTriggerKey: z.string().min(1).default("/"),
+      startingTriggerKey: z.string().min(1).default("//"),
       trailingTriggerKey: z.string().min(1).default(" "),
       trailingTriggerCount: z.number().int().positive().default(3),
       trailingTriggerTimeoutMs: z.number().int().positive().default(1500),
@@ -268,7 +268,7 @@ export const configSchema: z.ZodType<Config> = z.object({
       enabled: true,
       trigger: "//",
       triggerMode: "both",
-      startingTriggerKey: "/",
+      startingTriggerKey: "//",
       trailingTriggerKey: " ",
       trailingTriggerCount: 3,
       trailingTriggerTimeoutMs: 1500,
@@ -566,6 +566,26 @@ registerConfigMigration(2, (config) => {
           DEFAULT_SERVICES.chatgpt!.reasoningEffortAssistant,
       },
     },
+  };
+});
+
+// Version 3 shipped a single "/" input trigger, which intercepted chat slash
+// commands and any field starting with "/". The documented trigger is "//".
+registerConfigMigration(3, (config) => {
+  const input = isRecord(config.input) ? config.input : undefined;
+  return {
+    ...config,
+    version: 4,
+    ...(input
+      ? {
+          input: {
+            ...input,
+            ...(input.startingTriggerKey === "/"
+              ? { startingTriggerKey: "//" }
+              : {}),
+          },
+        }
+      : {}),
   };
 });
 

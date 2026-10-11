@@ -5,6 +5,8 @@ import {
 import type { LangCode } from "../../shared/types";
 import { languageName, setUiLocaleOverride, t } from "../../ui/shared/i18n";
 import type { FeatureContext } from "./context";
+import { isSensitiveField } from "./sensitive-field";
+import { isUserEvent } from "./trusted";
 
 export const INPUT_TRIGGER_WINDOW_MS = 1_500;
 export const INPUT_CONFIRM_LENGTH = 200;
@@ -29,10 +31,9 @@ export function parseTranslationInput(
   aliases: Readonly<
     Record<string, readonly string[]>
   > = DEFAULT_INPUT_LANGUAGE_ALIASES,
-  startingTriggerKey = "/",
+  startingTriggerKey = "//",
 ): ParsedInputTranslation {
   let text = value.replace(/\s{3,}$/, "");
-  if (text.startsWith("//")) text = text.slice(2).trimStart();
 
   const language = readLanguagePrefix(text, aliases, startingTriggerKey);
   if (language) {
@@ -42,6 +43,9 @@ export function parseTranslationInput(
     };
   }
 
+  if (text.startsWith(startingTriggerKey)) {
+    text = text.slice(startingTriggerKey.length);
+  }
   return { text: text.trim(), targetLanguage: defaultTargetLanguage };
 }
 
@@ -111,7 +115,7 @@ function findEditable(target: EventTarget | null): EditableField | null {
     field instanceof HTMLTextAreaElement ||
     field instanceof HTMLElement
   ) {
-    return field;
+    return isSensitiveField(field) ? null : field;
   }
   return null;
 }
@@ -324,6 +328,7 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
+    if (!isUserEvent(event)) return;
     if (event.key === "Escape" && pending) {
       event.preventDefault();
       cancelPending();
@@ -385,6 +390,7 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onInput = (event: Event): void => {
+    if (!isUserEvent(event)) return;
     const field = findEditable(event.target);
     if (!field || config.input.triggerMode === "trailing") return;
     if (fieldValue(field).startsWith(config.input.startingTriggerKey)) {

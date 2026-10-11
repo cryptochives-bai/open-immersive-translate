@@ -36,7 +36,9 @@ export function runPageCommand(
   command: PageCommandId,
   actions: PageControllerActions,
 ): void {
-  const service = SERVICE_COMMANDS[command];
+  const service = Object.hasOwn(SERVICE_COMMANDS, command)
+    ? SERVICE_COMMANDS[command]
+    : undefined;
   if (service) {
     actions.translateWithService(service);
     return;

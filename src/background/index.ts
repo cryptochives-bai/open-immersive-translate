@@ -365,11 +365,12 @@ async function dispatchPageCommand(
     targetTabId ??
     (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.id;
   if (tabId === undefined) return;
-  await browser.tabs.sendMessage(
-    tabId,
-    { type: "pageControllerCommand", command },
-    { frameId: 0 },
-  );
+  // No frameId: every frame runs the command itself. Frames no longer relay
+  // commands to each other through page-forgeable window messages.
+  await browser.tabs.sendMessage(tabId, {
+    type: "pageControllerCommand",
+    command,
+  });
 }
 
 browser.commands.onCommand.addListener((command) => {
@@ -452,6 +453,10 @@ onConfigChange((config) => {
 browser.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId === 0) {
     void pageBadges.clear(details.tabId).catch(() => undefined);
+  } else {
+    void pageBadges
+      .forgetFrame(details.tabId, details.frameId)
+      .catch(() => undefined);
   }
 });
 

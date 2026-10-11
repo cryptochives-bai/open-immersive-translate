@@ -2,6 +2,7 @@ import type {
   PageTranslationState,
   PageTranslationStateMessage,
 } from "../shared/messages";
+import { mergePageStates } from "../shared/page-state";
 
 export interface BadgePresentation {
   text: string;
@@ -20,6 +21,7 @@ export interface BadgeActionApi {
 
 export interface PageStateSender {
   tab?: { id?: number };
+  frameId?: number;
 }
 
 const STATUS_PRESENTATION: Record<
@@ -67,15 +69,25 @@ export function isPageTranslationStateMessage(
   );
 }
 
-/** Own per-tab page state and keep the action badge in sync with it. */
+/**
+ * Own per-tab, per-frame page state and keep the action badge in sync.
+ *
+ * Each frame's content script reports its own counts; the browser supplies
+ * `sender.frameId`, so frames cannot report on each other's behalf.
+ */
 export class PageBadgeController {
-  private readonly states = new Map<number, PageTranslationState>();
+  private readonly states = new Map<
+    number,
+    Map<number, PageTranslationState>
+  >();
 
   constructor(private readonly action: BadgeActionApi) {}
 
   get(tabId: number): PageTranslationState | undefined {
-    const state = this.states.get(tabId);
-    return state ? { ...state } : undefined;
+    const frames = this.states.get(tabId);
+    if (!frames || frames.size === 0) return undefined;
+    const [first, ...rest] = frames.values();
+    return mergePageStates(first!, rest);
   }
 
   async handleMessage(
@@ -85,12 +97,31 @@ export class PageBadgeController {
     if (!isPageTranslationStateMessage(message)) return undefined;
     const tabId = sender.tab?.id;
     if (tabId === undefined) return { received: true };
-    await this.update(tabId, message.state);
+    await this.update(tabId, message.state, sender.frameId ?? 0);
     return { received: true };
   }
 
-  async update(tabId: number, state: PageTranslationState): Promise<void> {
-    this.states.set(tabId, { ...state });
+  async update(
+    tabId: number,
+    state: PageTranslationState,
+    frameId = 0,
+  ): Promise<void> {
+    const frames = this.states.get(tabId) ?? new Map();
+    frames.set(frameId, { ...state });
+    this.states.set(tabId, frames);
+    await this.render(tabId);
+  }
+
+  /** Drop a subframe that navigated away and refresh the merged badge. */
+  async forgetFrame(tabId: number, frameId: number): Promise<void> {
+    const frames = this.states.get(tabId);
+    if (!frames?.delete(frameId)) return;
+    await this.render(tabId);
+  }
+
+  private async render(tabId: number): Promise<void> {
+    const state = this.get(tabId);
+    if (!state) return;
     const badge = badgeForPageState(state);
     await Promise.all([
       this.action.setBadgeText({ tabId, text: badge.text }),

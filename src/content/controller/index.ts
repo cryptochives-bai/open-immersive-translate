@@ -20,9 +20,8 @@ import { init as initSearchEnhancement } from "../features/search-enhancement";
 import { initSubtitles } from "../features/subtitle";
 import { onUrlChange } from "../observe/url-change";
 import { isPageCommandId, runPageCommand } from "./commands";
-import { createFrameSync, frameHasEnoughText } from "./frame-sync";
+import { frameHasEnoughText } from "./frame-sync";
 import { controllerT } from "./i18n";
-import { mergePageStates } from "./page-state";
 import { TranslationController } from "./translation-controller";
 
 export { TranslationController } from "./translation-controller";
@@ -93,16 +92,13 @@ export async function init(): Promise<() => void> {
     translated: 0,
     errors: 0,
   };
-  const frameStates = new Map<string, PageTranslationState>();
+  const isTop = window.top === window;
 
+  // Every frame reports its own counts; the background merges them per tab.
   const sendState = (): void => {
-    if (!frameSync.isTop) {
-      frameSync.report(ownState);
-      return;
-    }
     const message: PageTranslationStateMessage = {
       type: "pageTranslationState",
-      state: mergePageStates(ownState, frameStates.values()),
+      state: ownState,
     };
     void browser.runtime.sendMessage(message).catch(() => undefined);
   };
@@ -111,10 +107,6 @@ export async function init(): Promise<() => void> {
     runPageCommand(command, controller);
     debugState.active = controller.isTranslated();
   };
-  const frameSync = createFrameSync(window, runCommand, (frameId, state) => {
-    frameStates.set(frameId, state);
-    sendState();
-  });
 
   const mountFeatures = (current: TranslationController): void => {
     for (const dispose of featureDisposers) dispose();
@@ -150,7 +142,7 @@ export async function init(): Promise<() => void> {
       (rule as { mainFrameMinTextCount?: number }).mainFrameMinTextCount ??
       (config as { mainFrameMinTextCount?: number }).mainFrameMinTextCount ??
       50;
-    if (!frameSync.isTop && !frameHasEnoughText(document, minimum)) {
+    if (!isTop && !frameHasEnoughText(document, minimum)) {
       controller?.destroy();
       controller = undefined;
       ownState = {
@@ -196,11 +188,9 @@ export async function init(): Promise<() => void> {
     }
     const type = (message as { type: unknown }).type;
     if (type === "pageControllerCommand") {
+      // Delivered by the background to every frame of the tab.
       const command = (message as ControllerCommandMessage).command;
-      if (frameSync.isTop && isPageCommandId(command)) {
-        runCommand(command);
-        frameSync.broadcast(command);
-      }
+      if (isPageCommandId(command)) runCommand(command);
       return undefined;
     }
 
@@ -227,16 +217,15 @@ export async function init(): Promise<() => void> {
           : (window.getSelection()?.toString() ?? "");
       return Promise.resolve({ text: text.trim() });
     }
-    if (incoming.type === "toggleTranslate" && frameSync.isTop) {
-      const command =
+    if (incoming.type === "toggleTranslate") {
+      runCommand(
         incoming.scope === "whole"
           ? "toggleTranslateTheWholePage"
-          : "toggleTranslateTheMainPage";
-      runCommand(command);
-      frameSync.broadcast(command);
-    } else if (incoming.type === "translateInput" && frameSync.isTop) {
+          : "toggleTranslateTheMainPage",
+      );
+    } else if (incoming.type === "translateInput" && isTop) {
       controller?.translateActiveInput();
-    } else if (incoming.type === "translateSelection" && frameSync.isTop) {
+    } else if (incoming.type === "translateSelection" && isTop) {
       if (controller) showSelectionTranslation(controller, incoming.text);
     } else if (incoming.type === "configChanged") {
       refreshQueue = refreshQueue.then(() => refresh(incoming.config));
@@ -258,7 +247,6 @@ export async function init(): Promise<() => void> {
   return () => {
     browser.runtime.onMessage.removeListener(runtimeListener);
     stopUrl();
-    frameSync.dispose();
     controller?.destroy();
     for (const dispose of featureDisposers) dispose();
   };

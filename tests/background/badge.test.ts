@@ -73,4 +73,63 @@ describe("page action badge", () => {
       text: "",
     });
   });
+
+  it("merges per-frame reports and keys them by the browser-supplied frameId", async () => {
+    const action = actionMock();
+    const controller = new PageBadgeController(action);
+    const done = {
+      status: "done",
+      total: 4,
+      pending: 0,
+      translated: 4,
+      errors: 0,
+    } as const;
+    const busy = {
+      status: "translating",
+      total: 2,
+      pending: 2,
+      translated: 0,
+      errors: 0,
+    } as const;
+
+    await controller.handleMessage(
+      { type: "pageTranslationState", state: done },
+      { tab: { id: 7 }, frameId: 0 },
+    );
+    await controller.handleMessage(
+      { type: "pageTranslationState", state: busy },
+      { tab: { id: 7 }, frameId: 3 },
+    );
+    expect(controller.get(7)).toEqual({
+      status: "translating",
+      total: 6,
+      pending: 2,
+      translated: 4,
+      errors: 0,
+    });
+
+    // A frame can only replace its own entry, never another frame's.
+    await controller.handleMessage(
+      {
+        type: "pageTranslationState",
+        state: { ...done, total: 0, translated: 0 },
+      },
+      { tab: { id: 7 }, frameId: 3 },
+    );
+    expect(controller.get(7)).toMatchObject({ status: "done", total: 4 });
+
+    await controller.forgetFrame(7, 3);
+    expect(controller.get(7)).toEqual(done);
+  });
+
+  it("rejects malformed state reports", async () => {
+    const controller = new PageBadgeController(actionMock());
+    await expect(
+      controller.handleMessage(
+        { type: "pageTranslationState" },
+        { tab: { id: 7 }, frameId: 2 },
+      ),
+    ).resolves.toBeUndefined();
+    expect(controller.get(7)).toBeUndefined();
+  });
 });

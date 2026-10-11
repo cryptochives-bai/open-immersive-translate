@@ -966,13 +966,13 @@ function RulesPanel({ config, onPatch }: PanelProps): preact.JSX.Element {
   const saveRemoteRules = async (): Promise<void> => {
     const valid = remoteRules.every(({ url }) => {
       try {
-        return ["http:", "https:"].includes(new URL(url).protocol);
+        return new URL(url).protocol === "https:";
       } catch {
         return false;
       }
     });
     if (!valid) {
-      setRemoteStatus("规则 URL 必须是有效的 HTTP(S) 地址");
+      setRemoteStatus("规则 URL 必须是有效的 HTTPS 地址");
       return;
     }
     try {

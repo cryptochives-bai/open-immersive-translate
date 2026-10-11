@@ -35,14 +35,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** HTTPS only: a plain-HTTP feed lets anyone on the network rewrite the rules. */
 function validRemoteUrl(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
+    return new URL(value).protocol === "https:";
   } catch {
     return false;
   }
+}
+
+/**
+ * Rule fields a third-party feed may not set. `service` and `autoTranslate`
+ * would let a feed send every matching page to a configured (paid) service
+ * without a click; injected CSS can exfiltrate attribute values via url().
+ * Users can still set these in their own rules.
+ */
+const REMOTE_RULE_BLOCKED_FIELDS = [
+  "service",
+  "autoTranslate",
+  "injectedCss",
+  "additionalInjectedCss",
+] as const;
+
+export function sanitizeRemoteRule(rule: Rule): Rule {
+  const copy: Record<string, unknown> = { ...rule };
+  for (const field of REMOTE_RULE_BLOCKED_FIELDS) delete copy[field];
+  return copy as unknown as Rule;
 }
 
 /** Read the optional frozen-schema extension without trusting stored data. */
@@ -88,7 +107,8 @@ function parseCache(value: unknown): RemoteRuleCache {
     }
     entries[url] = {
       fetchedAt: entry.fetchedAt,
-      rules: entry.rules as Rule[],
+      // Feeds cached before this filter existed are sanitized on read too.
+      rules: (entry.rules as Rule[]).map(sanitizeRemoteRule),
     };
   }
   return { version: CACHE_VERSION, entries };
@@ -108,7 +128,7 @@ export function parseRemoteRulePayload(value: unknown): Rule[] {
   if (invalid !== undefined) {
     throw new TypeError("Remote rule feed contains an invalid rule.");
   }
-  return rules as Rule[];
+  return (rules as Rule[]).map(sanitizeRemoteRule);
 }
 
 async function fetchRemoteRules(

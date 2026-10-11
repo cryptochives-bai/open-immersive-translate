@@ -42,6 +42,13 @@ export interface TranslateParagraphsRequest {
   onPartial?(serviceId: string, text: string): void | Promise<void>;
   onResult(batchResults: ParagraphTranslationResult[]): void | Promise<void>;
   signal?: AbortSignal;
+  /** False for private (incognito) tabs: never read or persist translations. */
+  useCache?: boolean;
+}
+
+export interface TranslateOptions {
+  /** The requesting tab is incognito; keep its text out of the disk cache. */
+  incognito?: boolean;
 }
 
 export interface TranslationSchedulerOptions {
@@ -250,6 +257,7 @@ export class TranslationScheduler {
   async translate(
     request: TranslateMessage,
     emit: TranslateResultEmitter,
+    options: TranslateOptions = {},
   ): Promise<void> {
     const delivered = new Set<string>();
     try {
@@ -270,6 +278,7 @@ export class TranslationScheduler {
         serviceId,
         glossary: request.glossary,
         context: request.context,
+        useCache: !options.incognito,
         onResult: (results) => {
           for (const result of results) delivered.add(result.id);
           emit({
@@ -369,7 +378,11 @@ export class TranslationScheduler {
           request.context,
         ),
       );
-      const cached = await this.cache.getMany(cacheKeys);
+      const useCache =
+        request.useCache !== false && (await this.cacheEnabled());
+      const cached = useCache
+        ? await this.cache.getMany(cacheKeys)
+        : cacheKeys.map(() => undefined);
       if (controller.signal.aborted) throw cancellationError(primary.id);
 
       const hits: ParagraphTranslationResult[] = [];
@@ -442,7 +455,9 @@ export class TranslationScheduler {
                   },
                 ],
           );
-          if (cacheEntries.length) await this.cache.setMany(cacheEntries);
+          if (useCache && cacheEntries.length) {
+            await this.cache.setMany(cacheEntries);
+          }
 
           await request.onResult(
             batch.map((item, index) => {
@@ -464,6 +479,15 @@ export class TranslationScheduler {
         tabRequests.delete(operationId);
       }
       if (!tabRequests?.size) this.operations.delete(request.tabId);
+    }
+  }
+
+  /** The "cache translations" setting; defaults to on when unset. */
+  private async cacheEnabled(): Promise<boolean> {
+    try {
+      return (await this.configProvider()).cache?.enabled !== false;
+    } catch {
+      return true;
     }
   }
 
@@ -613,8 +637,9 @@ export async function translateParagraphs(
 export async function translate(
   request: TranslateMessage,
   emit: TranslateResultEmitter,
+  options?: TranslateOptions,
 ): Promise<void> {
-  await defaultScheduler.translate(request, emit);
+  await defaultScheduler.translate(request, emit, options);
 }
 
 export function cancel(tabId: number, requestId?: string): void {

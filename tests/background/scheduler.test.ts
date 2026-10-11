@@ -161,6 +161,62 @@ describe("TranslationScheduler", () => {
     ]);
   });
 
+  it.each([
+    [
+      "the cache setting is off",
+      { cache: { enabled: false, maxAgeDays: 30 } },
+      {},
+    ],
+    [
+      "the request comes from an incognito tab",
+      { cache: { enabled: true, maxAgeDays: 30 } },
+      { useCache: false },
+    ],
+  ])("neither reads nor writes the cache when %s", async (_, config, extra) => {
+    const cache = memoryCache();
+    await cache.set(
+      { serviceId: "primary", from: "en", to: "zh-CN", text: "cached" },
+      { text: "stale", ts: Date.now() },
+    );
+    const service = new FakeService(
+      "primary",
+      10,
+      100,
+      { rps: 10_000, concurrency: 2 },
+      async ({ texts }) => ({ texts: texts.map((text) => `t:${text}`) }),
+    );
+    const scheduler = new TranslationScheduler({
+      cache,
+      services: [service],
+      configProvider: async () => config as never,
+    });
+    const results: Array<{ id: string; text?: string }> = [];
+
+    await scheduler.translateParagraphs(
+      request({
+        items: [
+          { id: "a", text: "cached" },
+          { id: "b", text: "private" },
+        ],
+        onResult: (batch) => {
+          results.push(...batch);
+        },
+        ...extra,
+      }),
+    );
+
+    expect(service.calls).toEqual([["cached", "private"]]);
+    expect(results).toContainEqual({ id: "a", text: "t:cached" });
+    expect(
+      await cache.get({
+        serviceId: "primary",
+        from: "en",
+        to: "zh-CN",
+        text: "private",
+      }),
+    ).toBeUndefined();
+  });
+
   it("does not reuse a cached translation across glossary variants", async () => {
     const service = new FakeService(
       "primary",

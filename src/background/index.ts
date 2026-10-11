@@ -77,6 +77,19 @@ initPdfInterception();
 registerChatgptOauthPolling();
 const pageBadges = new PageBadgeController(actionApi());
 
+// Enforce the cache retention period daily. It used to run only on install or
+// update, so old translations piled up for as long as the version stayed put.
+const CACHE_CLEANUP_ALARM = "translationCache.cleanup";
+void browser.alarms
+  .create(CACHE_CLEANUP_ALARM, { periodInMinutes: 24 * 60 })
+  .catch(() => undefined);
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== CACHE_CLEANUP_ALARM) return;
+  void loadConfig()
+    .then((config) => cleanupTranslationCache(config.cache.maxAgeDays))
+    .catch(() => undefined);
+});
+
 async function configuredRule(url: string): Promise<Rule> {
   const [config, remoteRules] = await Promise.all([
     loadConfig(),
@@ -185,10 +198,14 @@ async function testService(serviceId: string, unsavedConfig?: ServiceConfig) {
   });
 }
 
-function runTranslation(request: TranslateMessage): void {
-  void translate(request, (message) => {
-    void sendToTab(request.tabId, message).catch(() => undefined);
-  });
+function runTranslation(request: TranslateMessage, incognito: boolean): void {
+  void translate(
+    request,
+    (message) => {
+      void sendToTab(request.tabId, message).catch(() => undefined);
+    },
+    { incognito },
+  );
 }
 
 browser.runtime.onMessage.addListener(
@@ -213,7 +230,7 @@ browser.runtime.onMessage.addListener(
       case "setConfig":
         return saveConfig(request.patch);
       case "translate":
-        runTranslation(request);
+        runTranslation(request, sender.tab?.incognito === true);
         return Promise.resolve({ accepted: true });
       case "cancel":
         cancel(request.tabId, request.requestId);
@@ -278,10 +295,14 @@ onTranslatePort((port) => {
 
     const request: TranslateMessage = { ...message, tabId };
     requestIds.add(request.requestId);
-    void translate(request, (response) => {
-      if (response.done) requestIds.delete(request.requestId);
-      if (!disconnected) port.postMessage(response);
-    });
+    void translate(
+      request,
+      (response) => {
+        if (response.done) requestIds.delete(request.requestId);
+        if (!disconnected) port.postMessage(response);
+      },
+      { incognito: port.sender?.tab?.incognito === true },
+    );
   });
 
   port.onDisconnect(() => {

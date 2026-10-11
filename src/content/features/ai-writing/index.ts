@@ -7,6 +7,8 @@ import {
 } from "../../../shared/k-assistant";
 import { setUiLocaleOverride, t } from "../../../ui/shared/i18n";
 import type { FeatureContext } from "../context";
+import { attachPrivateShadow } from "../private-shadow";
+import { isUserEvent } from "../trusted";
 import { withKDefaults } from "../../../shared/k-types";
 
 type WritingAction = "summarize" | "polish" | "translate" | "suggestions";
@@ -63,7 +65,7 @@ export function openAiWritingModal(
   const host = document.createElement("div");
   host.dataset.imt = "ai-writing";
   host.style.cssText = "position:fixed;inset:0;z-index:2147483647";
-  const shadow = host.attachShadow({ mode: "open" });
+  const shadow = attachPrivateShadow(host);
   shadow.innerHTML = `
     <style>${modalStyles}</style>
     <div class="backdrop">
@@ -215,6 +217,7 @@ export function openAiWritingModal(
   };
 
   shadow.addEventListener("click", (event) => {
+    if (!isUserEvent(event)) return;
     const target = event.target;
     if (!(target instanceof HTMLButtonElement)) return;
     if (target.dataset.command === "close") close();

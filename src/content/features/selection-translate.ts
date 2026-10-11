@@ -5,7 +5,10 @@ import {
 } from "../../shared/k-assistant";
 import type { LangCode } from "../../shared/types";
 import { setUiLocaleOverride, t } from "../../ui/shared/i18n";
+import { featureBus, TRANSLATE_SELECTION_EVENT } from "./bus";
 import type { FeatureContext } from "./context";
+import { attachPrivateShadow } from "./private-shadow";
+import { isUserEvent } from "./trusted";
 import { withKDefaults } from "../../shared/k-types";
 
 interface SelectionPosition {
@@ -114,7 +117,7 @@ export function init(
       "z-index:2147483647",
     ].join(";");
 
-    const shadow = selectionHost.attachShadow({ mode: "open" });
+    const shadow = attachPrivateShadow(selectionHost);
     shadow.innerHTML = `
       <style>
         :host { color-scheme: light; font-family: system-ui, sans-serif; }
@@ -218,15 +221,19 @@ export function init(
         });
     };
 
-    trigger.addEventListener("click", translate);
+    const translateOnUserEvent = (event: Event): void => {
+      if (isUserEvent(event)) translate();
+    };
+    trigger.addEventListener("click", translateOnUserEvent);
     if (config.selection.triggerMode === "icon-hover") {
-      trigger.addEventListener("pointerenter", translate);
+      trigger.addEventListener("pointerenter", translateOnUserEvent);
     }
     if (openImmediately || config.selection.triggerMode === "direct") {
       translate();
     }
 
     shadow.addEventListener("click", (event) => {
+      if (!isUserEvent(event)) return;
       const target = event.target;
       if (!(target instanceof HTMLButtonElement)) return;
       if (target.dataset.action === "close") close();
@@ -246,6 +253,7 @@ export function init(
   };
 
   const onMouseUp = (event: MouseEvent): void => {
+    if (!isUserEvent(event)) return;
     const eventTarget = event.target;
     if (
       !(eventTarget instanceof Node) ||
@@ -298,15 +306,18 @@ export function init(
   document.addEventListener("mouseup", onMouseUp);
   document.addEventListener("pointerdown", onPointerDown, true);
   document.addEventListener("keydown", onKeyDown, true);
-  document.addEventListener("imt:translate-selection", onContextMenuSelection);
+  featureBus.addEventListener(
+    TRANSLATE_SELECTION_EVENT,
+    onContextMenuSelection,
+  );
 
   return () => {
     close();
     document.removeEventListener("mouseup", onMouseUp);
     document.removeEventListener("pointerdown", onPointerDown, true);
     document.removeEventListener("keydown", onKeyDown, true);
-    document.removeEventListener(
-      "imt:translate-selection",
+    featureBus.removeEventListener(
+      TRANSLATE_SELECTION_EVENT,
       onContextMenuSelection,
     );
   };

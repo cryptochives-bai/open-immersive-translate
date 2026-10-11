@@ -1,4 +1,5 @@
 import type { FeatureContext } from "./context";
+import { isUserEvent } from "./trusted";
 
 const HOVER_DEBOUNCE_MS = 200;
 
@@ -42,6 +43,7 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
+    if (!isUserEvent(event)) return;
     if (
       (ctx.config.hover.holdKey === "Ctrl" && event.key === "Control") ||
       event.key === ctx.config.hover.holdKey
@@ -66,6 +68,7 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onMouseMove = (event: MouseEvent): void => {
+    if (!isUserEvent(event)) return;
     if (!held && !holdKeyMatches(ctx.config.hover.holdKey, event)) {
       clearPending();
       return;

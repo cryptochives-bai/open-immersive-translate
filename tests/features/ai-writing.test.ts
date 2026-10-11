@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { privateShadowRoot } from "../../src/content/features/private-shadow";
 const browserMock = vi.hoisted(() => {
   const listeners = new Set<(message: unknown) => void>();
   return {
@@ -68,7 +69,7 @@ describe("AI writing", () => {
     const host = document.querySelector<HTMLElement>(
       '[data-imt="ai-writing"]',
     )!;
-    const shadow = host.shadowRoot!;
+    const shadow = privateShadowRoot(host)!;
     shadow.querySelector<HTMLButtonElement>('[data-action="polish"]')!.click();
     const prompt = shadow.querySelector<HTMLTextAreaElement>(".prompt")!;
     prompt.value = "Custom instruction";

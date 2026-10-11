@@ -1,3 +1,5 @@
+import { isUserEvent } from "../features/trusted";
+
 const HOVER_DELAY_MS = 200;
 
 function nearestBlock(target: Element, blockTags: ReadonlySet<string>): Element | null {
@@ -25,6 +27,7 @@ export function installDirectHoverTranslation(
     pending = null;
   };
   const onMove = (event: MouseEvent): void => {
+    if (!isUserEvent(event)) return;
     const target = event.target;
     if (!(target instanceof Element) || target.closest("[data-imt]")) {
       clear();

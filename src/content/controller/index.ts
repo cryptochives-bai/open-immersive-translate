@@ -9,6 +9,7 @@ import type {
 import { detectLang } from "../../shared/lang";
 import { sendToBackground, type Msg } from "../../shared/messages";
 import type { Config } from "../../shared/types";
+import { featureBus, TRANSLATE_SELECTION_EVENT } from "../features/bus";
 import type { FeatureContext } from "../features/context";
 import { init as initFloatBall } from "../features/float-ball";
 import { init as initHoverTranslation } from "../features/hover-translate";
@@ -45,8 +46,8 @@ function showSelectionTranslation(
   controller: TranslationController,
   text: string,
 ): void {
-  const handled = !document.dispatchEvent(
-    new CustomEvent("imt:translate-selection", {
+  const handled = !featureBus.dispatchEvent(
+    new CustomEvent(TRANSLATE_SELECTION_EVENT, {
       cancelable: true,
       detail: { text },
     }),

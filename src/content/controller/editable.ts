@@ -1,5 +1,7 @@
 import browser from "webextension-polyfill";
 
+import { isUserEvent } from "../features/trusted";
+
 export const TRANSLATION_OVERRIDES_KEY = "imt.translationOverrides.v1";
 
 type OverrideSites = Record<string, Record<string, string>>;
@@ -65,6 +67,7 @@ export function installEditableTranslations(
     }
   };
   const onDoubleClick = (event: Event): void => {
+    if (!isUserEvent(event)) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const translation = target.closest<HTMLElement>('[data-imt="target"]');

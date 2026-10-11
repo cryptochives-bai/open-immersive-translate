@@ -2,6 +2,8 @@ import browser from "webextension-polyfill";
 
 import { sendToBackground } from "../../shared/messages";
 import type { FeatureContext } from "./context";
+import { attachPrivateShadow } from "./private-shadow";
+import { isUserEvent } from "./trusted";
 
 export const FLOAT_BALL_POSITION_KEY = "floatBallPos";
 
@@ -37,7 +39,7 @@ export function init(ctx: FeatureContext): () => void {
     "z-index:2147483647",
   ].join(";");
 
-  const shadow = host.attachShadow({ mode: "open" });
+  const shadow = attachPrivateShadow(host);
   shadow.innerHTML = `
     <style>
       :host { color-scheme: light; font-family: system-ui, sans-serif; }
@@ -141,7 +143,7 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) return;
+    if (!isUserEvent(event) || event.button !== 0) return;
     positionTouched = true;
     const rect = button.getBoundingClientRect();
     drag = {
@@ -180,7 +182,8 @@ export function init(ctx: FeatureContext): () => void {
       .catch(() => undefined);
   };
 
-  const onClick = (): void => {
+  const onClick = (event: MouseEvent): void => {
+    if (!isUserEvent(event)) return;
     if (suppressClick) {
       suppressClick = false;
       return;
@@ -191,11 +194,13 @@ export function init(ctx: FeatureContext): () => void {
   };
 
   const onContextMenu = (event: MouseEvent): void => {
+    if (!isUserEvent(event)) return;
     event.preventDefault();
     menu.hidden = !menu.hidden;
   };
 
   const onMenuClick = (event: Event): void => {
+    if (!isUserEvent(event)) return;
     const target = event.target;
     if (!(target instanceof HTMLButtonElement)) return;
     const action = target.dataset.action;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { privateShadowRoot } from "../../src/content/features/private-shadow";
 import { DEFAULT_SUBTITLE_CONFIG } from "../../src/shared/subtitle-types";
 import {
   hexToRgba,
@@ -40,7 +41,7 @@ describe("SubtitleRenderer", () => {
       { start: 0, end: 2, text: "Hello", translation: "你好" },
     ]);
     renderer.renderAt(1);
-    const root = renderer.host.shadowRoot;
+    const root = privateShadowRoot(renderer.host);
     expect(root?.querySelector(".source")?.textContent).toBe("Hello");
     expect(root?.querySelector(".translation")?.textContent).toBe("你好");
     expect(root?.querySelector(".badge")?.textContent).toBe("实验性字幕适配");
@@ -61,7 +62,7 @@ describe("SubtitleRenderer", () => {
     const renderer = new SubtitleRenderer(video, DEFAULT_SUBTITLE_CONFIG, {
       onStyleChange,
     });
-    const caption = renderer.host.shadowRoot?.querySelector(".caption");
+    const caption = privateShadowRoot(renderer.host)?.querySelector(".caption");
     caption?.dispatchEvent(pointer("pointerdown", 10, 20));
     window.dispatchEvent(pointer("pointermove", 25, 45));
     window.dispatchEvent(pointer("pointerup", 25, 45));

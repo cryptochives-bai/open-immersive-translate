@@ -2,6 +2,8 @@ import type {
   BilingualSubtitleCue,
   SubtitleConfig,
 } from "../../../shared/subtitle-types";
+import { attachPrivateShadow } from "../private-shadow";
+import { isUserEvent } from "../trusted";
 
 interface NativeTrackState {
   track: TextTrack;
@@ -52,7 +54,7 @@ export class SubtitleRenderer {
     this.host.dataset.imt = "subtitle-overlay";
     this.host.style.cssText =
       "position:fixed;pointer-events:none;z-index:2147483646;overflow:hidden;";
-    this.root = this.host.attachShadow({ mode: "open" });
+    this.root = attachPrivateShadow(this.host);
 
     const sheet = document.createElement("style");
     sheet.textContent = `
@@ -167,7 +169,7 @@ export class SubtitleRenderer {
   private readonly onPlacementChange = (): void => this.updatePlacement();
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) return;
+    if (!isUserEvent(event) || event.button !== 0) return;
     event.preventDefault();
     this.drag = {
       startX: event.clientX,

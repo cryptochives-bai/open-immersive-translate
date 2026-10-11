@@ -9,11 +9,6 @@ import {
   resolveAutoTargetLanguage,
 } from "../../src/content/features/input-translate";
 
-// jsdom events are never trusted; the gate itself is covered below.
-vi.mock("../../src/content/features/trusted", () => ({
-  isUserEvent: vi.fn(() => true),
-}));
-
 function context(
   translateText = vi.fn().mockResolvedValue("translated"),
 ): FeatureContext {
@@ -34,7 +29,6 @@ afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
   vi.restoreAllMocks();
-  vi.mocked(isUserEvent).mockImplementation(() => true);
 });
 
 function pressEnter(field: Element): void {

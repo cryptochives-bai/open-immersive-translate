@@ -1,6 +1,7 @@
 import { detectLang, isSameLang } from "../../shared/lang";
 import type { LangCode } from "../../shared/types";
 import type { FeatureContext } from "./context";
+import { attachPrivateShadow } from "./private-shadow";
 import {
   searchEnhancementLocale,
   searchEnhancementText,
@@ -124,7 +125,7 @@ function renderBar(
   );
   const host = doc.createElement("div");
   host.dataset.imt = "search-enhancement";
-  const shadow = host.attachShadow({ mode: "open" });
+  const shadow = attachPrivateShadow(host);
 
   const style = doc.createElement("style");
   style.textContent = `

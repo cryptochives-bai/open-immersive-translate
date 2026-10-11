@@ -5,6 +5,7 @@ import {
 import type { LangCode } from "../../shared/types";
 import { languageName, setUiLocaleOverride, t } from "../../ui/shared/i18n";
 import type { FeatureContext } from "./context";
+import { attachPrivateShadow } from "./private-shadow";
 import { isSensitiveField } from "./sensitive-field";
 import { isUserEvent } from "./trusted";
 
@@ -236,7 +237,7 @@ export function init(ctx: FeatureContext): () => void {
       `top:${Math.max(8, rect.top - 42)}px`,
       "z-index:2147483647",
     ].join(";");
-    const shadow = host.attachShadow({ mode: "open" });
+    const shadow = attachPrivateShadow(host);
     const select = document.createElement("select");
     select.setAttribute("aria-label", t("popup.targetLanguage"));
     const automatic = document.createElement("option");

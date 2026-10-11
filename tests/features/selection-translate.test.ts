@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  featureBus,
+  TRANSLATE_SELECTION_EVENT,
+} from "../../src/content/features/bus";
+import { privateShadowRoot } from "../../src/content/features/private-shadow";
 import type { FeatureContext } from "../../src/content/features/context";
 import {
   init,
@@ -59,12 +64,14 @@ describe("selection translation", () => {
     );
     const host = document.querySelector<HTMLElement>('[data-imt="selection"]')!;
     expect(host).not.toBeNull();
-    host.shadowRoot!.querySelector<HTMLButtonElement>(".trigger")!.click();
+    privateShadowRoot(host)!
+      .querySelector<HTMLButtonElement>(".trigger")!
+      .click();
 
     await vi.waitFor(() => {
-      expect(host.shadowRoot!.querySelector(".result")!.textContent).toBe(
-        "选中的文字",
-      );
+      expect(
+        privateShadowRoot(host)!.querySelector(".result")!.textContent,
+      ).toBe("选中的文字");
     });
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.querySelector('[data-imt="selection"]')).toBeNull();
@@ -90,20 +97,21 @@ describe("selection translation", () => {
     };
     const dispose = init(ctx);
 
-    const event = new CustomEvent("imt:translate-selection", {
+    const event = new CustomEvent(TRANSLATE_SELECTION_EVENT, {
       cancelable: true,
       detail: { text: "Selected text" },
     });
-    expect(document.dispatchEvent(event)).toBe(false);
+    expect(featureBus.dispatchEvent(event)).toBe(false);
 
     const host = document.querySelector<HTMLElement>('[data-imt="selection"]')!;
     expect(
-      host.shadowRoot!.querySelector<HTMLButtonElement>(".trigger")!.hidden,
+      privateShadowRoot(host)!.querySelector<HTMLButtonElement>(".trigger")!
+        .hidden,
     ).toBe(true);
     await vi.waitFor(() => {
-      expect(host.shadowRoot!.querySelector(".result")!.textContent).toBe(
-        "选中的文字",
-      );
+      expect(
+        privateShadowRoot(host)!.querySelector(".result")!.textContent,
+      ).toBe("选中的文字");
     });
     expect(ctx.translateText).toHaveBeenCalledWith(
       "Selected text",
@@ -171,9 +179,9 @@ describe("selection translation", () => {
     paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     const host = document.querySelector<HTMLElement>('[data-imt="selection"]')!;
     await vi.waitFor(() =>
-      expect(host.shadowRoot!.querySelector(".result")!.textContent).toContain(
-        "问候语",
-      ),
+      expect(
+        privateShadowRoot(host)!.querySelector(".result")!.textContent,
+      ).toContain("问候语"),
     );
     expect(assistant.complete).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "dictionary", text: "hello" }),

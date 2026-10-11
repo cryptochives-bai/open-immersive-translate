@@ -31,6 +31,7 @@ import { observeMutations } from "../observe/mutation";
 import { translateImmediately } from "../observe/immediate";
 import { observeViewport, type ViewportObserver } from "../observe/viewport";
 import { decodePlaceholders } from "../extract/placeholder";
+import { featureBus, SUBTITLE_PRETRANSLATION_EVENT } from "../features/bus";
 import { isSensitiveField } from "../features/sensitive-field";
 import {
   injectStyles,
@@ -210,8 +211,8 @@ export class TranslationController implements PageControllerActions {
 
   toggleVideoSubtitlePreTranslation(): void {
     this.videoSubtitlePreTranslation = !this.videoSubtitlePreTranslation;
-    document.dispatchEvent(
-      new CustomEvent("imt:video-subtitle-pretranslation", {
+    featureBus.dispatchEvent(
+      new CustomEvent(SUBTITLE_PRETRANSLATION_EVENT, {
         detail: { enabled: this.videoSubtitlePreTranslation },
       }),
     );

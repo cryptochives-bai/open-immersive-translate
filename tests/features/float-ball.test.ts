@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { privateShadowRoot } from "../../src/content/features/private-shadow";
 const browserMock = vi.hoisted(() => ({
   storage: {
     local: {
@@ -61,7 +62,8 @@ describe("float ball", () => {
     const host = document.querySelector<HTMLElement>(
       '[data-imt="float-ball"]',
     )!;
-    const button = host.shadowRoot!.querySelector<HTMLButtonElement>(".ball")!;
+    const button =
+      privateShadowRoot(host)!.querySelector<HTMLButtonElement>(".ball")!;
     vi.spyOn(button, "getBoundingClientRect").mockReturnValue({
       x: 100,
       y: 200,

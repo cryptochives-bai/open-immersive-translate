@@ -5,6 +5,7 @@ import {
   type SubtitleConfig,
   type SubtitleCue,
 } from "../../../shared/subtitle-types";
+import { featureBus, SUBTITLE_PRETRANSLATION_EVENT } from "../bus";
 import type { FeatureContext } from "../context";
 import {
   matchingSubtitleAdapters,
@@ -149,15 +150,15 @@ export function initSubtitles(ctx: FeatureContext): () => void {
     }
   };
   browser.runtime.onMessage.addListener(onMessage);
-  document.addEventListener(
-    "imt:video-subtitle-pretranslation",
+  featureBus.addEventListener(
+    SUBTITLE_PRETRANSLATION_EVENT,
     onControllerToggle,
   );
 
   return () => {
     browser.runtime.onMessage.removeListener(onMessage);
-    document.removeEventListener(
-      "imt:video-subtitle-pretranslation",
+    featureBus.removeEventListener(
+      SUBTITLE_PRETRANSLATION_EVENT,
       onControllerToggle,
     );
     disposeBridge();

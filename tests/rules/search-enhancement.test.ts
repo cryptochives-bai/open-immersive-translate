@@ -1,5 +1,6 @@
 // @vitest-environment-options { "url": "https://www.google.com/search?q=%E4%BA%8C%E5%B0%96%E7%93%A3" }
 
+import { privateShadowRoot } from "../../src/content/features/private-shadow";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FeatureContext } from "../../src/content/features/context";
@@ -105,9 +106,11 @@ describe("init", () => {
     );
     expect(host).not.toBeNull();
     expect(
-      host?.shadowRoot?.querySelector("aside")?.getAttribute("aria-label"),
+      privateShadowRoot(host)
+        ?.querySelector("aside")
+        ?.getAttribute("aria-label"),
     ).toBe("英语搜索");
-    const link = host?.shadowRoot?.querySelector<HTMLAnchorElement>("a");
+    const link = privateShadowRoot(host)?.querySelector<HTMLAnchorElement>("a");
     expect(link?.textContent).toContain("mitral valve");
     expect(new URL(link?.href ?? "").searchParams.get("q")).toBe(
       "mitral valve",
@@ -164,7 +167,9 @@ describe("init", () => {
 
     const hosts = document.querySelectorAll('[data-imt="search-enhancement"]');
     expect(hosts).toHaveLength(1);
-    expect(hosts[0]?.shadowRoot?.textContent).toContain("mitral valve");
-    expect(hosts[0]?.shadowRoot?.textContent).not.toContain("old result");
+    expect(privateShadowRoot(hosts[0])?.textContent).toContain("mitral valve");
+    expect(privateShadowRoot(hosts[0])?.textContent).not.toContain(
+      "old result",
+    );
   });
 });

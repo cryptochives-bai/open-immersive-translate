@@ -14,7 +14,10 @@ const browserMock = vi.hoisted(() => ({
 
 vi.mock("webextension-polyfill", () => ({ default: browserMock }));
 
+import { installDirectHoverTranslation } from "../../src/content/controller/hover-directly";
+import { openAiWritingModal } from "../../src/content/features/ai-writing";
 import type { FeatureContext } from "../../src/content/features/context";
+import { init as initHover } from "../../src/content/features/hover-translate";
 import { init as initFloatBall } from "../../src/content/features/float-ball";
 import { privateShadowRoot } from "../../src/content/features/private-shadow";
 import { init as initSelection } from "../../src/content/features/selection-translate";
@@ -120,5 +123,64 @@ describe("page scripts cannot drive extension UI", () => {
     expect(document.querySelector('[data-imt="selection"]')).toBeNull();
     expect(ctx.translateText).not.toHaveBeenCalled();
     dispose();
+  });
+
+  it("ignores forged hover input in modifier and direct hover modes", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(isUserEvent).mockImplementation(() => false);
+      document.body.innerHTML = "<p><span id='word'>attacker prompt</span></p>";
+      const word = document.getElementById("word")!;
+      const ctx = context({ hover: { enabled: true, holdKey: "Alt" } });
+      const disposeHover = initHover({
+        ...ctx,
+        rule: { matches: ["<all_urls>"], allBlockTags: ["P"] },
+      });
+      const direct = vi.fn().mockResolvedValue(undefined);
+      const disposeDirect = installDirectHoverTranslation(direct, ["p"]);
+
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Alt", altKey: true }),
+      );
+      word.dispatchEvent(
+        new MouseEvent("mousemove", { bubbles: true, altKey: true }),
+      );
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(ctx.translateParagraph).not.toHaveBeenCalled();
+      expect(direct).not.toHaveBeenCalled();
+      disposeHover();
+      disposeDirect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a forged run click in the AI writing panel", async () => {
+    const input = document.createElement("textarea");
+    input.value = "secret draft";
+    document.body.append(input);
+    input.focus();
+    const assistant = { complete: vi.fn().mockResolvedValue("unused") };
+    openAiWritingModal(context(), assistant);
+    vi.mocked(isUserEvent).mockImplementation(() => false);
+
+    const host = document.querySelector('[data-imt="ai-writing"]')!;
+    privateShadowRoot(host)!
+      .querySelector<HTMLButtonElement>('[data-command="run"]')!
+      .click();
+    await Promise.resolve();
+
+    expect(assistant.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("isUserEvent", () => {
+  it("is false for script-dispatched events and true only when the browser says so", async () => {
+    const actual = await vi.importActual<{
+      isUserEvent: (event: Event) => boolean;
+    }>("../../src/content/features/trusted");
+    expect(actual.isUserEvent(new MouseEvent("click"))).toBe(false);
+    expect(actual.isUserEvent({ isTrusted: true } as Event)).toBe(true);
   });
 });

@@ -297,7 +297,6 @@ export async function startChatgptOauth(
   overrides: Partial<AuthDependencies> = {},
 ): Promise<ChatgptOauthStatus> {
   const runtime = dependencies(overrides);
-  const previous = await readState();
   await clearPoll();
   let response: Response | undefined;
   for (let attempt = 0; attempt < MAX_DEVICE_CODE_ATTEMPTS; attempt += 1) {
@@ -360,10 +359,10 @@ export async function startChatgptOauth(
     startedAt,
     nextPollAt: startedAt + interval * 1_000,
   };
-  const state: StoredAuthState = {
-    ...(previous.tokens ? { tokens: previous.tokens } : {}),
-    pending,
-  };
+  // Keep the tokens stored now: a refresh may have rotated them while the
+  // device-code request (and its 429 retries) was running.
+  const { tokens } = await readState();
+  const state: StoredAuthState = { ...(tokens ? { tokens } : {}), pending };
   await writeState(state);
   await schedulePoll(pending);
   return statusFromState(state);
@@ -372,7 +371,6 @@ export async function startChatgptOauth(
 async function exchangeAuthorizationCode(
   authorizationCode: string,
   codeVerifier: string,
-  previous: StoredAuthState,
   runtime: AuthDependencies,
 ): Promise<ChatgptOauthStatus> {
   let response: Response;
@@ -465,16 +463,18 @@ export async function pollChatgptOauth(
 
   if (response.status === 403 || response.status === 404) {
     pending.nextPollAt = runtime.now() + pending.intervalSeconds * 1_000;
-    await writeState({ ...state, pending, error: undefined });
+    const next = { ...(await readState()), pending, error: undefined };
+    await writeState(next);
     await schedulePoll(pending);
-    return statusFromState({ ...state, pending, error: undefined });
+    return statusFromState(next);
   }
   if (response.status === 429) {
     const delaySeconds = retryAfterSeconds(response) ?? pending.intervalSeconds;
     pending.nextPollAt = runtime.now() + Math.max(1, delaySeconds) * 1_000;
-    await writeState({ ...state, pending, error: undefined });
+    const next = { ...(await readState()), pending, error: undefined };
+    await writeState(next);
     await schedulePoll(pending);
-    return statusFromState({ ...state, pending, error: undefined });
+    return statusFromState(next);
   }
   if (!response.ok) {
     return storeError(
@@ -500,12 +500,7 @@ export async function pollChatgptOauth(
   if (!authorizationCode || !codeVerifier) {
     return storeError("登录状态响应缺少授权代码或校验码。");
   }
-  return exchangeAuthorizationCode(
-    authorizationCode,
-    codeVerifier,
-    state,
-    runtime,
-  );
+  return exchangeAuthorizationCode(authorizationCode, codeVerifier, runtime);
 }
 
 export async function cancelChatgptOauth(): Promise<ChatgptOauthStatus> {

@@ -191,6 +191,42 @@ describe("sensitive fields", () => {
     expect(source?.value ?? "").not.toContain("hunter2");
   });
 
+  it("treats a focused field inside a web component as focused", async () => {
+    const component = document.createElement("x-editor");
+    const inner = component.attachShadow({ mode: "open" });
+    const field = document.createElement("input");
+    inner.append(field);
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "outside";
+    document.body.append(component, paragraph);
+    field.focus();
+    expect(document.activeElement).toBe(component);
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      anchorNode: paragraph.firstChild,
+      focusNode: paragraph.firstChild,
+      rangeCount: 1,
+      getRangeAt: () =>
+        ({
+          getBoundingClientRect: () => ({
+            left: 0,
+            top: 0,
+            right: 10,
+            bottom: 10,
+            width: 10,
+            height: 10,
+          }),
+        }) as unknown as Range,
+      toString: () => "secret",
+    } as unknown as Selection);
+    const dispose = initSelection(context());
+
+    paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(document.querySelector('[data-imt="selection"]')).toBeNull();
+    dispose();
+  });
+
   it("does not offer selection translation while focus stays in a field", async () => {
     const field = document.createElement("input");
     field.value = "123456";

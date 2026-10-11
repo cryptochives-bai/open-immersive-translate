@@ -36,6 +36,15 @@ export interface SelectionOptions {
 
 export const DICTIONARY_PROMPT = `Return strict JSON for the selected word using this shape: {"word":"","phonetic":"","parts":[{"partOfSpeech":"","definitions":[""],"examples":[""]}]}. Explain definitions in the target language. Do not add markdown.`;
 
+/** The focused element, looking through open shadow roots of web components. */
+function deepActiveElement(): Element | null {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  return active;
+}
+
 function isEditable(node: Node | null): boolean {
   const element = node instanceof Element ? node : node?.parentElement;
   return Boolean(
@@ -272,7 +281,7 @@ export function init(
       isEditable(eventTarget) ||
       // A drag that starts inside a field and ends outside it still selects
       // field text, with the focus left in the field.
-      isEditable(document.activeElement) ||
+      isEditable(deepActiveElement()) ||
       (eventTarget instanceof Element && eventTarget.closest("[data-imt]"))
     ) {
       return;

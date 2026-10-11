@@ -1,11 +1,39 @@
-# 开源版沉浸式翻译
+# 开源版沉浸式翻译（安全加固 fork）
+
+> **这是 [ymcwiki/open-immersive-translate](https://github.com/ymcwiki/open-immersive-translate)（`ee490dd`）的安全加固 fork。** 上游代码经过一次完整的安全审查：没有发现后门、埋点或向第三方外传数据的行为；但发现了几处会在用户不知情时把输入内容外送、或让任意网页借用你的翻译服务的问题。本 fork 修复了这些问题，改动见下表，每项都附带单元测试，关键路径另有真实 Chromium 端到端测试。
+
+### 本 fork 修复了什么
+
+| 问题 | 上游行为 | 本 fork |
+|---|---|---|
+| 输入框翻译触发过宽 | 默认开启，任何输入框（含密码框）内容以单个 `/` 开头再按 Enter 就会被拦截、送去翻译并被替换（会吞掉 Slack/Discord 的 `/指令`） | 改回设计文档写的 `//`（旧配置自动迁移）；密码、验证码、支付、非文本输入框一律跳过 |
+| 网页可借用你的翻译服务 | 内容脚本不检查 `isTrusted`、扩展 UI 用开放的 shadow root、控制信号走 `document` 事件，任意网页都能驱动翻译（含付费 API / ChatGPT 账号）并读回结果 | 只接受真实用户事件；所有扩展 UI 改为 closed shadow root；内部信号改走隔离世界的 EventTarget |
+| iframe 指令可伪造 | 框架之间用 `postMessage(..., "*")` 传指令和状态，嵌入页可命令同源 iframe 用任意付费服务翻译 | 指令由后台直接送到每个 frame，状态由各 frame 直接上报后台、按 `frameId` 合并 |
+| ChatGPT 刷新令牌并发 | 并发刷新会重复使用同一个 refresh token；失效后每批请求都重放死令牌；「从 Codex CLI 导入」会和 CLI 互相把对方登出 | 刷新串行化并做比对写入；失效令牌即弃；移除 CLI 导入 |
+| 「从不翻译此网站」只挡整页 | 字幕、输入框、划词、悬停照样外送 | 从不翻译的网站只保留悬浮球与 AI 写作（均需显式操作） |
+| 字幕默认预翻译 | 任何带字幕轨的页面，整条字幕不经点击就送去翻译 | 默认关闭，只翻译播放位置附近的字幕 |
+| 导出「隐藏 API Key」只藏一半 | 只删 `apiKey`，各云服务 `secret` 与自定义请求头原样导出 | 按字段元数据隐藏所有密钥字段与请求头 |
+| 缓存开关无效 | 关掉缓存照样写；无痕窗口的译文写进持久缓存；30 天清理只在安装/更新时执行 | 开关生效；无痕标签页不读写缓存；每日清理 |
+| 429 不退避 | 固定 250ms 重试，其余批次照发；标记为不可重试的错误也会重送 | 遵守 `Retry-After` 并暂停整个服务队列；不可重试的错误不重送 |
+| 远程规则可控制服务 | 订阅源可下发 `autoTranslate` + `service` 把所有页面送去付费服务，可注入 CSS，允许 `http://` | 只接受 HTTPS；远程规则中的 `service`、`autoTranslate`、`injectedCss` 被剥离 |
+| 其他 | Gemini 密钥放在 URL 查询串；任意网站可嵌入 PDF 阅读器并指定 `?file=` 让扩展抓取 | Gemini 改用 `x-goog-api-key` 请求头；被嵌入时 PDF 阅读器不自动加载 |
+
+### 仍需知道的风险
+
+- **ChatGPT 账号登录沿用 OpenAI Codex CLI 的 OAuth client_id**，并非 OpenAI 为本扩展签发。OpenAI 可能将这种用法视为违反服务条款，账号存在被限流或停用的风险。请不要用主要工作账号；用 API key 类服务没有这个问题。
+- 「退出登录」只删除本机令牌，不会在 OpenAI 端撤销；要立即失效请在 ChatGPT 账号设置中退出所有设备。
+- 扩展需要 `<all_urls>` 权限并在所有 frame 注入内容脚本（翻译扩展的常态）。构建工具（crxjs）会把内容脚本分块列为对所有网站可访问的资源，知道扩展 ID 的网站因此能探测到本扩展已安装（自行加载的解压扩展 ID 随安装路径而定）。
+- 默认翻译服务是免密钥 Google 翻译：你主动翻译的内容会发送给 Google。
+- 没有发布打包产物，也没有自动更新：请自行构建，更新时重新构建。
+
+---
 
 **沉浸式翻译（Immersive Translate）是闭源软件。** 它的 Chrome 扩展包是 12 MB 压缩混淆过的 JavaScript，没有源码、没有 source map，用户无法审计它发出了什么请求、无法修改它的行为，也无法在它停止维护时自救。
 
 这个仓库是一个从零编写、MIT 许可的开源替代品。功能对照它 1.32.7 版本逐项复刻（见 [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md)，105 项中 102 项完成），全部代码可读、可改、可自行构建。
 
 - 和 immersivetranslate.com 没有任何关联，也不使用它的任何代码。
-- 没有账号系统、没有付费墙、没有埋点上报。翻译请求只发往你自己配置的服务。
+- 没有账号系统、没有付费墙、没有埋点上报。翻译请求只发往你自己配置的服务（默认是免密钥 Google 翻译）。
 - **可以直接登录自己的 ChatGPT 账号翻译**（OAuth 设备码，不需要 API key），详见下文。
 - 支持 Chrome / Edge（MV3）、Firefox，以及油猴脚本版。
 
@@ -46,10 +74,6 @@
 
 整个过程不需要输入密码到插件里，授权全部在 OpenAI 自己的登录页完成。设备码 15 分钟内有效，过期重新点登录即可。
 
-### 已经装了 Codex CLI 的话
-
-展开「从 Codex CLI 导入」，把 `~/.codex/auth.json` 的完整内容粘贴进去，直接复用 CLI 已登录的凭据，不用再走一遍设备码。
-
 ### 背后发生了什么
 
 | 步骤 | 请求 |
@@ -61,7 +85,7 @@
 | 模型列表 | `GET chatgpt.com/backend-api/codex/models` |
 | 续期 | `POST auth.openai.com/oauth/token`（`refresh_token`，到期前 2 分钟自动刷新） |
 
-请求头带 `Authorization: Bearer <access_token>` 和从 JWT 里解出的 `ChatGPT-Account-ID`，并按 OpenAI 对第三方客户端的要求用 `originator` 标识本插件。401 会自动刷新令牌重试一次，429 按 `Retry-After` 退避。
+请求头带 `Authorization: Bearer <access_token>` 和从 JWT 里解出的 `ChatGPT-Account-ID`，并用 `originator: bilingual-translator` 标识本插件；OAuth 的 `client_id` 则沿用 Codex CLI 的（见上文风险说明）。401 会自动刷新令牌重试一次（并发请求共用同一次刷新），429 按 `Retry-After` 退避并暂停该服务的请求队列。
 
 ### 思考强度
 
@@ -69,8 +93,9 @@ ChatGPT 服务可分别设置翻译和助手的思考强度，默认是「低」
 
 ### 安全与边界
 
-- 访问令牌和刷新令牌只存在 `chrome.storage.local` 的独立条目里，**不会随配置导出**，也不会发给任何第三方。「退出登录」即清除。
-- 这是 OpenAI 面向 Codex 客户端开放的流程，额度受你订阅计划的限制，和网页版 ChatGPT 共用。用量大时可能触发 429，属正常限流。
+- 访问令牌和刷新令牌只存在 `chrome.storage.local` 的独立条目里，**不会随配置导出**，也不会发给任何第三方。「退出登录」只清除本机令牌，不会在 OpenAI 端撤销授权。
+- 这个流程原本是给 Codex CLI 用的，本扩展沿用了 Codex CLI 的 `client_id`，并非 OpenAI 为本扩展签发，账号有被限流或停用的风险。额度受你订阅计划的限制，和网页版 ChatGPT 共用。
+- 刷新令牌失效（HTTP 400/401/403）后会立即丢弃并要求重新登录，不会在每批翻译里重放。
 - 油猴脚本版不含此 provider（GM 请求层不支持流式 SSE），Chrome / Edge / Firefox 扩展版都支持。
 - 全部实现在 [src/background/services/chatgpt-oauth/](src/background/services/chatgpt-oauth/)，可自行审阅。
 
@@ -159,7 +184,7 @@ API Key 保存在浏览器的扩展本地存储中，不会写入项目文件。
 
 保存前，设置页会校验 JSON 和规则字段。
 
-规则合并顺序为：通用规则 → 内置规则 → 远程规则 → 用户规则。后面的普通字段覆盖前面的字段，`additional*` 字段按追加语义合并。远程订阅只接受 HTTP(S) URL，每 24 小时刷新；拉取失败时保留最近一次有效缓存。
+规则合并顺序为：通用规则 → 内置规则 → 远程规则 → 用户规则。后面的普通字段覆盖前面的字段，`additional*` 字段按追加语义合并。远程订阅只接受 HTTPS URL，每 24 小时刷新；拉取失败时保留最近一次有效缓存。远程规则不能设置 `service`、`autoTranslate`、`injectedCss`/`additionalInjectedCss`，这些字段只在你自己的用户规则里生效。
 
 ## 常用快捷键
 

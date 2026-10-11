@@ -43,8 +43,8 @@ const remoteRuleSubscriptionSchema = z.object({
     .string()
     .url()
     .refine(
-      (value) => value.startsWith("https://") || value.startsWith("http://"),
-      "Remote rule URL must use HTTP or HTTPS",
+      (value) => value.startsWith("https://"),
+      "Remote rule URL must use HTTPS",
     ),
   enabled: z.boolean().default(true),
 });
@@ -571,11 +571,23 @@ registerConfigMigration(2, (config) => {
 
 // Version 3 shipped a single "/" input trigger, which intercepted chat slash
 // commands and any field starting with "/". The documented trigger is "//".
+// It also accepted http:// rule feeds, which anyone on the network can rewrite;
+// those subscriptions are dropped (the schema now requires HTTPS).
 registerConfigMigration(3, (config) => {
   const input = isRecord(config.input) ? config.input : undefined;
   return {
     ...config,
     version: 4,
+    ...(Array.isArray(config.remoteRules)
+      ? {
+          remoteRules: config.remoteRules.filter(
+            (rule) =>
+              !isRecord(rule) ||
+              typeof rule.url !== "string" ||
+              !rule.url.startsWith("http://"),
+          ),
+        }
+      : {}),
     ...(input
       ? {
           input: {

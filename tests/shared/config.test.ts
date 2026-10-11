@@ -23,6 +23,25 @@ describe("configuration migration", () => {
     ).toBe(";;");
   });
 
+  it("drops plain-HTTP rule feeds when upgrading and rejects new ones", () => {
+    const migrated = migrateConfig({
+      version: 3,
+      remoteRules: [
+        { url: "http://rules.example/r.json", enabled: true },
+        { url: "https://rules.example/r.json", enabled: true },
+      ],
+    });
+    expect(migrated.remoteRules).toEqual([
+      { url: "https://rules.example/r.json", enabled: true },
+    ]);
+    expect(() =>
+      migrateConfig({
+        version: 4,
+        remoteRules: [{ url: "http://rules.example/r.json", enabled: true }],
+      }),
+    ).toThrow();
+  });
+
   it("applies and validates ChatGPT reasoning defaults", () => {
     expect(serviceConfigSchema.parse({ kind: "chatgpt" })).toMatchObject({
       reasoningEffort: "low",

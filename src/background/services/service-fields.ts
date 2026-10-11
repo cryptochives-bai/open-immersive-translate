@@ -90,6 +90,13 @@ const transportFields: readonly ServiceI18nKey[] = [
   "fallbackService",
 ];
 
+/** Credential-bearing service fields: password inputs plus free-form request headers. */
+export function isSecretServiceField(name: string): boolean {
+  return (
+    name === "headers" || fieldType(name as ServiceFieldName) === "password"
+  );
+}
+
 function fieldType(name: ServiceFieldName): ServiceFieldType {
   if (name === "auth") return "auth";
   if (name === "apiKey" || name === "secret") return "password";

@@ -26,6 +26,7 @@ const browserMock = vi.hoisted(() => ({
 vi.mock("webextension-polyfill", () => ({ default: browserMock }));
 
 import { DEFAULT_CONFIG } from "../../src/shared/config";
+import type { Config } from "../../src/shared/types";
 import { Button, Card, Field, Select, Toggle } from "../../src/ui/shared";
 import {
   parseConfigImport,
@@ -141,6 +142,28 @@ describe("configuration transfer", () => {
 
     expect(serializeConfig(config, true)).not.toContain("secret");
     expect(serializeConfig(config, false)).toContain("secret");
+    const signed = {
+      ...DEFAULT_CONFIG,
+      services: {
+        ...DEFAULT_CONFIG.services,
+        tencent: {
+          kind: "tencent",
+          enabled: true,
+          appId: "AKID",
+          secret: "tencent-secret-key",
+        },
+        custom1: {
+          kind: "custom-http",
+          enabled: true,
+          baseUrl: "https://mt.example/translate",
+          headers: '{"Authorization":"Bearer custom-token"}',
+        },
+      },
+    } as unknown as Config;
+    const redacted = serializeConfig(signed, true);
+    expect(redacted).not.toContain("tencent-secret-key");
+    expect(redacted).not.toContain("custom-token");
+    expect(redacted).toContain("https://mt.example/translate");
     const unsafeConfig = structuredClone(config);
     const unsafeServices = unsafeConfig.services as unknown as Record<
       string,

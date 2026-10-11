@@ -1,6 +1,7 @@
 import { migrateConfig } from "../../shared/config";
 import type { KConfig } from "../../shared/k-types";
 import type { Config } from "../../shared/types";
+import { isSecretServiceField } from "./service-fields";
 
 export type ConfigImportResult =
   | { ok: true; config: KConfig }
@@ -19,7 +20,11 @@ export function serializeConfig(
       delete copy.access_token;
       delete copy.refresh_token;
       delete copy.id_token;
-      if (redactApiKeys) delete copy.apiKey;
+      if (redactApiKeys) {
+        for (const key of Object.keys(copy)) {
+          if (isSecretServiceField(key)) delete copy[key];
+        }
+      }
       return [id, copy];
     }),
   );

@@ -291,6 +291,80 @@ describe("TranslationScheduler", () => {
     expect(output).toEqual([{ id: "a", text: "fallback:source" }]);
   });
 
+  it("does not resend failures a service marked non-retryable", async () => {
+    const service = new FakeService(
+      "primary",
+      10,
+      100,
+      { rps: 10_000, concurrency: 1 },
+      async () => {
+        throw new TranslateError("network", "stream failed", {
+          serviceId: "primary",
+          retryable: false,
+        });
+      },
+    );
+    const scheduler = new TranslationScheduler({
+      cache: memoryCache(),
+      services: [service],
+    });
+
+    await scheduler.translateParagraphs(
+      request({ items: [{ id: "a", text: "hello" }] }),
+    );
+
+    expect(service.calls).toHaveLength(1);
+  });
+
+  it("waits for Retry-After before retrying a rate-limited batch", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const service = new FakeService(
+        "primary",
+        10,
+        100,
+        { rps: 10_000, concurrency: 1 },
+        async ({ texts }) => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new TranslateError("rate_limit", "slow down", {
+              serviceId: "primary",
+              details: { status: 429, retryAfter: 2 },
+            });
+          }
+          return { texts: texts.map((text) => `t:${text}`) };
+        },
+      );
+      const scheduler = new TranslationScheduler({
+        cache: memoryCache(),
+        services: [service],
+        // Cache hashing uses crypto.subtle, which fake timers cannot advance.
+        configProvider: async () =>
+          ({ cache: { enabled: false, maxAgeDays: 30 } }) as never,
+      });
+      const results: Array<{ id: string; text?: string }> = [];
+      const done = scheduler.translateParagraphs(
+        request({
+          items: [{ id: "a", text: "hello" }],
+          onResult: (batch) => {
+            results.push(...batch);
+          },
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(service.calls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(5);
+      await done;
+
+      expect(service.calls).toHaveLength(2);
+      expect(results).toEqual([{ id: "a", text: "t:hello" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("skips an unsupported primary service and uses its fallback", async () => {
     const primary = new FakeService(
       "primary",

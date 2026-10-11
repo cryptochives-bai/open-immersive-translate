@@ -14,6 +14,7 @@ import {
   TranslateError,
   fetchWithTimeout,
   responseError,
+  retryAfterSeconds,
 } from "../base";
 import {
   buildRefusalPatterns,
@@ -233,17 +234,6 @@ export function parseCodexSseEvent(
     });
   }
   return undefined;
-}
-
-function retryAfterSeconds(response: Response): number | undefined {
-  const value = response.headers.get("Retry-After")?.trim();
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
-  const date = Date.parse(value);
-  return Number.isNaN(date)
-    ? undefined
-    : Math.max(0, Math.ceil((date - Date.now()) / 1_000));
 }
 
 async function codexResponseError(response: Response): Promise<TranslateError> {

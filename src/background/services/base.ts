@@ -199,6 +199,18 @@ export async function fetchWithTimeout(
   }
 }
 
+/** Parse Retry-After (delta-seconds or HTTP-date) into whole seconds. */
+export function retryAfterSeconds(response: Response): number | undefined {
+  const value = response.headers.get("Retry-After")?.trim();
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  return Number.isNaN(date)
+    ? undefined
+    : Math.max(0, Math.ceil((date - Date.now()) / 1_000));
+}
+
 /** Convert an HTTP failure into a stable service error. */
 export async function responseError(
   response: Response,
@@ -227,12 +239,14 @@ export async function responseError(
     );
   }
   if (response.status === 429) {
+    const retryAfter = retryAfterSeconds(response);
     return new TranslateError(
       "rate_limit",
       "Translation service rate limit exceeded.",
       {
         serviceId,
-        details,
+        details:
+          retryAfter !== undefined ? { ...details, retryAfter } : details,
       },
     );
   }

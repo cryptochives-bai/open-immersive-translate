@@ -4,7 +4,7 @@ import type {
   ChatgptOauthAccount,
   ChatgptOauthStatus,
 } from "../../../shared/messages";
-import { TranslateError } from "../base";
+import { retryAfterSeconds, TranslateError } from "../base";
 
 export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
@@ -238,17 +238,6 @@ async function schedulePoll(pending: PendingLogin): Promise<void> {
 
 async function clearPoll(): Promise<void> {
   await browser.alarms.clear(CHATGPT_AUTH_ALARM);
-}
-
-function retryAfterSeconds(response: Response): number | undefined {
-  const value = response.headers.get("Retry-After")?.trim();
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp)
-    ? undefined
-    : Math.max(0, Math.ceil((timestamp - Date.now()) / 1_000));
 }
 
 async function responseMessage(response: Response, fallback: string) {

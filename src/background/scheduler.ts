@@ -22,6 +22,10 @@ import {
 import { createService, getService } from "./services";
 
 const RETRY_DELAY_MS = 250;
+/** Backoff after a 429 that carries no Retry-After header. */
+const RATE_LIMIT_DELAY_MS = 1_000;
+/** Longest Retry-After we wait out before retrying a batch once. */
+const MAX_RETRY_AFTER_MS = 60_000;
 
 export interface SchedulerParagraph extends Omit<
   TranslateParagraph,
@@ -106,6 +110,11 @@ class ServiceQueue {
     private readonly rps: number,
   ) {}
 
+  /** Hold every queued request for this service until `timestamp`. */
+  pauseUntil(timestamp: number): void {
+    this.nextStartAt = Math.max(this.nextStartAt, timestamp);
+  }
+
   enqueue<T>(
     run: () => Promise<T>,
     priority: boolean,
@@ -176,15 +185,43 @@ function itemError(message: string, serviceId: string): TranslateError {
   });
 }
 
+function errorCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
 function isRetryable(error: unknown): boolean {
-  if (error instanceof TranslateError) {
-    return error.code === "NETWORK" || error.code === "RATE_LIMIT";
+  if (typeof error !== "object" || error === null) return false;
+  // Services mark definitive failures (e.g. a failed stream event) retryable:
+  // false even when the code is NETWORK; resending them only burns quota.
+  if ((error as { retryable?: unknown }).retryable === false) return false;
+  const code = errorCode(error);
+  return code === "NETWORK" || code === "RATE_LIMIT";
+}
+
+function retryAfterMs(error: unknown): number | undefined {
+  const details =
+    typeof error === "object" && error !== null
+      ? (error as { details?: unknown }).details
+      : undefined;
+  const seconds =
+    typeof details === "object" && details !== null
+      ? (details as { retryAfter?: unknown }).retryAfter
+      : undefined;
+  return typeof seconds === "number" && seconds >= 0
+    ? seconds * 1_000
+    : undefined;
+}
+
+/** How long to wait before retrying these errors; rate limits honor Retry-After. */
+function retryDelayMs(errors: readonly unknown[]): number {
+  let delay = RETRY_DELAY_MS;
+  for (const error of errors) {
+    if (errorCode(error) !== "RATE_LIMIT") continue;
+    delay = Math.max(delay, retryAfterMs(error) ?? RATE_LIMIT_DELAY_MS);
   }
-  if (typeof error === "object" && error !== null) {
-    const code = (error as { code?: unknown }).code;
-    return code === "NETWORK" || code === "RATE_LIMIT";
-  }
-  return false;
+  return delay;
 }
 
 function unpackResult(
@@ -567,7 +604,17 @@ export class TranslationScheduler {
       .filter((index) => index >= 0);
     if (!retryIndexes.length) return first;
 
-    await abortableDelay(RETRY_DELAY_MS, signal);
+    const errors = retryIndexes.map((index) => first[index]!.error);
+    const delay = retryDelayMs(errors);
+    if (errors.some((error) => errorCode(error) === "RATE_LIMIT")) {
+      // Back off the whole service, not just this batch, so parallel batches
+      // stop hammering an endpoint that is already rejecting us.
+      this.queueFor(service).pauseUntil(
+        Date.now() + Math.min(delay, MAX_RETRY_AFTER_MS),
+      );
+    }
+    if (delay > MAX_RETRY_AFTER_MS) return first;
+    await abortableDelay(delay, signal);
     const retried = await call(retryIndexes.map((index) => texts[index]));
     const merged = [...first];
     retryIndexes.forEach((originalIndex, retryIndex) => {

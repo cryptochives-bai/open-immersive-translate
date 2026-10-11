@@ -270,6 +270,9 @@ export function init(
     if (
       !(eventTarget instanceof Node) ||
       isEditable(eventTarget) ||
+      // A drag that starts inside a field and ends outside it still selects
+      // field text, with the focus left in the field.
+      isEditable(document.activeElement) ||
       (eventTarget instanceof Element && eventTarget.closest("[data-imt]"))
     ) {
       return;

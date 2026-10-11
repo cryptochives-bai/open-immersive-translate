@@ -12,5 +12,12 @@ export function isSensitiveField(field: Element): boolean {
   ) {
     return true;
   }
-  return SENSITIVE_AUTOCOMPLETE.test(field.getAttribute("autocomplete") ?? "");
+  if (SENSITIVE_AUTOCOMPLETE.test(field.getAttribute("autocomplete") ?? "")) {
+    return true;
+  }
+  // Some sites build password boxes from text inputs masked with CSS.
+  const masking = field.ownerDocument.defaultView
+    ?.getComputedStyle(field)
+    .getPropertyValue("-webkit-text-security");
+  return Boolean(masking && masking !== "none");
 }

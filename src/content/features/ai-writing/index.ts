@@ -8,6 +8,7 @@ import {
 import { setUiLocaleOverride, t } from "../../../ui/shared/i18n";
 import type { FeatureContext } from "../context";
 import { attachPrivateShadow } from "../private-shadow";
+import { isSensitiveField } from "../sensitive-field";
 import { isUserEvent } from "../trusted";
 import { withKDefaults } from "../../../shared/k-types";
 
@@ -58,9 +59,12 @@ export function openAiWritingModal(
   document.querySelector('[data-imt="ai-writing"]')?.remove();
   const config = withKDefaults(ctx.config);
   setUiLocaleOverride(config.uiLanguage);
-  const captured = captureInput();
-  const sourceText =
-    captured?.text ?? window.getSelection()?.toString().trim() ?? "";
+  const active = document.activeElement;
+  const sensitive = active instanceof Element && isSensitiveField(active);
+  const captured = sensitive ? undefined : captureInput();
+  const sourceText = sensitive
+    ? ""
+    : (captured?.text ?? window.getSelection()?.toString().trim() ?? "");
 
   const host = document.createElement("div");
   host.dataset.imt = "ai-writing";

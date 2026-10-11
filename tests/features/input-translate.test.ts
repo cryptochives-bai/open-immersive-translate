@@ -259,4 +259,30 @@ describe("input translation", () => {
       dispose();
     },
   );
+
+  it("treats a CSS-masked text input as a password field", async () => {
+    const input = document.createElement("input");
+    input.value = "//secret";
+    document.body.append(input);
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
+      const style = real(element);
+      if (element !== input) return style;
+      return {
+        ...style,
+        getPropertyValue: (name: string) =>
+          name === "-webkit-text-security"
+            ? "disc"
+            : style.getPropertyValue(name),
+      } as CSSStyleDeclaration;
+    });
+    const translateText = vi.fn().mockResolvedValue("unused");
+    const dispose = init(context(translateText));
+
+    pressEnter(input);
+    await Promise.resolve();
+
+    expect(translateText).not.toHaveBeenCalled();
+    dispose();
+  });
 });

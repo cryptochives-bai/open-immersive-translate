@@ -175,6 +175,57 @@ describe("page scripts cannot drive extension UI", () => {
   });
 });
 
+describe("sensitive fields", () => {
+  it("AI writing does not read a focused password field", () => {
+    const input = document.createElement("input");
+    input.type = "password";
+    input.value = "hunter2";
+    document.body.append(input);
+    input.focus();
+    const assistant = { complete: vi.fn().mockResolvedValue("unused") };
+    openAiWritingModal(context(), assistant);
+
+    const host = document.querySelector('[data-imt="ai-writing"]')!;
+    const source =
+      privateShadowRoot(host)!.querySelector<HTMLTextAreaElement>("textarea");
+    expect(source?.value ?? "").not.toContain("hunter2");
+  });
+
+  it("does not offer selection translation while focus stays in a field", async () => {
+    const field = document.createElement("input");
+    field.value = "123456";
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "outside";
+    document.body.append(field, paragraph);
+    field.focus();
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      anchorNode: paragraph.firstChild,
+      focusNode: paragraph.firstChild,
+      rangeCount: 1,
+      getRangeAt: () =>
+        ({
+          getBoundingClientRect: () => ({
+            left: 0,
+            top: 0,
+            right: 10,
+            bottom: 10,
+            width: 10,
+            height: 10,
+          }),
+        }) as unknown as Range,
+      toString: () => "123456",
+    } as unknown as Selection);
+    const ctx = context();
+    const dispose = initSelection(ctx);
+
+    paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(document.querySelector('[data-imt="selection"]')).toBeNull();
+    dispose();
+  });
+});
+
 describe("isUserEvent", () => {
   it("is false for script-dispatched events and true only when the browser says so", async () => {
     const actual = await vi.importActual<{

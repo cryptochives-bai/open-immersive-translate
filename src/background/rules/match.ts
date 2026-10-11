@@ -84,53 +84,104 @@ export interface RuleValidationResult {
   errors: string[];
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
-}
-
-function compileStars(value: string, replacement: string): string {
-  return value.split("*").map(escapeRegExp).join(replacement);
-}
-
-function compileAuthority(authority: string): string {
-  const bracketEnd = authority.indexOf("]");
-  const hasPort =
-    bracketEnd >= 0
-      ? authority.slice(bracketEnd + 1).startsWith(":")
-      : authority.includes(":");
-
-  const compiled = authority.startsWith("*.")
-    ? `(?:[^./:?#]+\\.)*${compileStars(authority.slice(2), "[^/:?#]*")}`
-    : compileStars(authority, "[^/:?#]*");
-
-  return hasPort ? compiled : `${compiled}(?::\\d+)?`;
-}
-
-/** Convert a URL glob into an anchored, case-insensitive regular expression. */
-export function globToRegExp(glob: string): RegExp {
-  if (glob === "<all_urls>") {
-    return /^(?:(?:https?|ftp):\/\/|file:\/\/\/).*$/i;
+/**
+ * Match `text` against a pattern whose only metacharacter is `*`, in
+ * O(pattern x text) time. A star may consume only characters accepted by
+ * `starCanEat`. Compiling globs to regular expressions let a rule with many
+ * stars (e.g. from a remote feed) backtrack for seconds on every page load.
+ */
+function wildcardMatch(
+  pattern: string,
+  text: string,
+  starCanEat: (char: string) => boolean = () => true,
+): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (p < pattern.length && pattern[p] === text[t]) {
+      p++;
+      t++;
+    } else if (star >= 0 && starCanEat(text[mark]!)) {
+      p = star + 1;
+      t = ++mark;
+    } else {
+      return false;
+    }
   }
+  while (p < pattern.length && pattern[p] === "*") p++;
+  return p === pattern.length;
+}
 
-  const schemeEnd = glob.indexOf("://");
-  if (schemeEnd < 0) {
-    return new RegExp(`^${compileStars(glob, ".*")}$`, "i");
-  }
+const SCHEME = /^[a-z][a-z\d+.-]*$/;
+const authorityStar = (char: string): boolean => char !== ":";
 
-  const scheme = glob.slice(0, schemeEnd);
-  const remainder = glob.slice(schemeEnd + 3);
+function splitUrl(
+  value: string,
+): { scheme: string; authority: string; suffix: string } | undefined {
+  const schemeEnd = value.indexOf("://");
+  if (schemeEnd < 0) return undefined;
+  const remainder = value.slice(schemeEnd + 3);
   const suffixStart = remainder.search(/[/?#]/);
-  const authority =
-    suffixStart < 0 ? remainder : remainder.slice(0, suffixStart);
-  const suffix = suffixStart < 0 ? "" : remainder.slice(suffixStart);
-  const compiledScheme =
-    scheme === "*"
-      ? "[a-z][a-z\\d+.-]*"
-      : compileStars(scheme, "[a-z][a-z\\d+.-]*");
+  return {
+    scheme: value.slice(0, schemeEnd),
+    authority: suffixStart < 0 ? remainder : remainder.slice(0, suffixStart),
+    suffix: suffixStart < 0 ? "" : remainder.slice(suffixStart),
+  };
+}
 
-  return new RegExp(
-    `^${compiledScheme}:\\/\\/${compileAuthority(authority)}${compileStars(suffix, ".*")}$`,
-    "i",
+function schemeMatches(pattern: string, scheme: string): boolean {
+  if (!SCHEME.test(scheme)) return false;
+  if (pattern === "*") return true;
+  if (!pattern.includes("*")) return pattern === scheme;
+  // Each star stands for a whole scheme-shaped run; schemes are short.
+  const compiled = pattern
+    .split("*")
+    .map((part) => part.replace(/[\\^$+?.()|[\]{}]/g, "\\$&"))
+    .join("[a-z][a-z\\d+.-]*");
+  return new RegExp(`^${compiled}$`).test(scheme);
+}
+
+function authorityMatches(pattern: string, authority: string): boolean {
+  const bracketEnd = pattern.indexOf("]");
+  const patternHasPort =
+    bracketEnd >= 0
+      ? pattern.slice(bracketEnd + 1).startsWith(":")
+      : pattern.includes(":");
+  const host = patternHasPort ? authority : authority.replace(/:\d+$/, "");
+  if (!pattern.startsWith("*.")) {
+    return wildcardMatch(pattern, host, authorityStar);
+  }
+  // "*.example.com" also matches "example.com": zero or more leading labels.
+  const rest = pattern.slice(2);
+  for (let start = 0; start <= host.length;) {
+    if (wildcardMatch(rest, host.slice(start), authorityStar)) return true;
+    const dot = host.indexOf(".", start);
+    if (dot <= start || /[/:?#]/.test(host.slice(start, dot))) return false;
+    start = dot + 1;
+  }
+  return false;
+}
+
+/** Test a URL against a match glob (`<all_urls>`, `scheme://authority/path`). */
+export function globMatches(glob: string, url: string): boolean {
+  const pattern = glob.toLowerCase();
+  const candidate = url.toLowerCase();
+  if (pattern === "<all_urls>") {
+    return /^(?:(?:https?|ftp):\/\/|file:\/\/\/)/.test(candidate);
+  }
+  const parts = splitUrl(pattern);
+  if (!parts) return wildcardMatch(pattern, candidate);
+  const target = splitUrl(candidate);
+  return (
+    target !== undefined &&
+    schemeMatches(parts.scheme, target.scheme) &&
+    authorityMatches(parts.authority, target.authority) &&
+    wildcardMatch(parts.suffix, target.suffix)
   );
 }
 
@@ -141,7 +192,7 @@ function urlMatchesGlob(url: string, glob: string): boolean {
   } catch {
     // Invalid URLs cannot be normalized, but matching the input is harmless.
   }
-  return globToRegExp(glob).test(candidate);
+  return globMatches(glob, candidate);
 }
 
 function matchesRule(

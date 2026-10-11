@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  globToRegExp,
+  globMatches,
   matchRule,
   matchRuleInPage,
   mergeRules,
@@ -9,32 +9,79 @@ import {
 } from "../../src/background/rules/match";
 import type { Rule } from "../../src/shared/types";
 
-describe("globToRegExp", () => {
+describe("globMatches", () => {
   it("matches wildcard schemes, ports, and query strings", () => {
-    const pattern = globToRegExp("*://example.com/path*");
-
-    expect(pattern.test("https://example.com/path?q=translation#result")).toBe(
-      true,
-    );
-    expect(pattern.test("http://example.com:8080/path/next")).toBe(true);
-    expect(pattern.test("https://example.com/other/path")).toBe(false);
+    expect(
+      globMatches(
+        "*://example.com/path*",
+        "https://example.com/path?q=translation#result",
+      ),
+    ).toBe(true);
+    expect(
+      globMatches("*://example.com/path*", "http://example.com:8080/path/next"),
+    ).toBe(true);
+    expect(
+      globMatches("*://example.com/path*", "https://example.com/other/path"),
+    ).toBe(false);
   });
 
   it("lets a leading hostname wildcard match the root and nested subdomains", () => {
-    const pattern = globToRegExp("https://*.github.com/*");
-
-    expect(pattern.test("https://github.com/openai/codex")).toBe(true);
-    expect(pattern.test("https://gist.github.com/user/id")).toBe(true);
-    expect(pattern.test("https://deep.docs.github.com/page")).toBe(true);
-    expect(pattern.test("https://notgithub.com/page")).toBe(false);
+    expect(
+      globMatches("https://*.github.com/*", "https://github.com/openai/codex"),
+    ).toBe(true);
+    expect(
+      globMatches("https://*.github.com/*", "https://gist.github.com/user/id"),
+    ).toBe(true);
+    expect(
+      globMatches(
+        "https://*.github.com/*",
+        "https://deep.docs.github.com/page",
+      ),
+    ).toBe(true);
+    expect(
+      globMatches("https://*.github.com/*", "https://notgithub.com/page"),
+    ).toBe(false);
   });
 
   it("escapes regex characters and anchors the whole URL", () => {
-    const pattern = globToRegExp("https://example.com/a.b/*");
+    expect(
+      globMatches("https://example.com/a.b/*", "https://example.com/a.b/value"),
+    ).toBe(true);
+    expect(
+      globMatches("https://example.com/a.b/*", "https://example.com/axb/value"),
+    ).toBe(false);
+    expect(
+      globMatches(
+        "https://example.com/a.b/*",
+        "prefix-https://example.com/a.b/value",
+      ),
+    ).toBe(false);
+  });
 
-    expect(pattern.test("https://example.com/a.b/value")).toBe(true);
-    expect(pattern.test("https://example.com/axb/value")).toBe(false);
-    expect(pattern.test("prefix-https://example.com/a.b/value")).toBe(false);
+  it("keeps ports, schemeless globs, and subdomain labels strict", () => {
+    expect(
+      globMatches("https://example.com:8443/*", "https://example.com:8443/a"),
+    ).toBe(true);
+    expect(
+      globMatches("https://example.com:8443/*", "https://example.com/a"),
+    ).toBe(false);
+    expect(
+      globMatches("*example.com/docs*", "https://example.com/docs/x"),
+    ).toBe(true);
+    expect(
+      globMatches("https://*.example.com/*", "https://a..example.com/x"),
+    ).toBe(false);
+    expect(globMatches("https://*/x", "https://evil.com/y/x")).toBe(false);
+    expect(globMatches("<all_urls>", "chrome://settings/")).toBe(false);
+  });
+
+  it("matches pathological globs in linear time", () => {
+    const started = performance.now();
+    const url = `https://example.com/${"a".repeat(2_000)}`;
+    expect(globMatches(`https://*/${"*".repeat(12)}x`, url)).toBe(false);
+    expect(globMatches(`https://*/*${"a*".repeat(40)}b`, url)).toBe(false);
+    expect(globMatches(`https://*${".*".repeat(40)}/x`, url)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });
 

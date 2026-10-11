@@ -10,6 +10,8 @@ import { detectLang } from "../../shared/lang";
 import { sendToBackground, type Msg } from "../../shared/messages";
 import type { Config } from "../../shared/types";
 import { featureBus, TRANSLATE_SELECTION_EVENT } from "../features/bus";
+import { attachPrivateShadow } from "../features/private-shadow";
+import { isUserEvent } from "../features/trusted";
 import type { FeatureContext } from "../features/context";
 import { init as initFloatBall } from "../features/float-ball";
 import { init as initHoverTranslation } from "../features/hover-translate";
@@ -57,8 +59,14 @@ function showSelectionTranslation(
   const host = document.createElement("aside");
   host.dataset.imt = "context-menu";
   host.style.cssText =
-    "position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:360px;padding:12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;box-shadow:0 8px 24px rgb(0 0 0 / 20%);font:14px/1.5 system-ui";
-  host.textContent = controllerT("selectionTranslating");
+    "position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:360px;padding:12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;box-shadow:0 8px 24px rgb(0 0 0 / 20%);font:14px/1.5 system-ui;cursor:pointer";
+  // Closed root keeps the translation out of the page's reach; a click closes it.
+  const body = document.createElement("span");
+  body.textContent = controllerT("selectionTranslating");
+  attachPrivateShadow(host).append(body);
+  host.addEventListener("click", (event) => {
+    if (isUserEvent(event)) host.remove();
+  });
   document.documentElement.append(host);
   void controller
     .translateText(
@@ -67,10 +75,10 @@ function showSelectionTranslation(
       controller.config.targetLanguage,
     )
     .then((translation) => {
-      if (host.isConnected) host.textContent = translation;
+      body.textContent = translation;
     })
     .catch(() => {
-      if (host.isConnected) host.textContent = controllerT("translationFailed");
+      body.textContent = controllerT("translationFailed");
     });
 }
 
@@ -86,18 +94,24 @@ const ALL_FEATURES: readonly FeatureInit[] = [
   initSubtitles,
 ];
 
+/** Features that send page text out without a deliberate user action. */
+const AUTOMATIC_FEATURES: ReadonlySet<FeatureInit> = new Set([
+  initSubtitles,
+  initSearchEnhancement,
+]);
+
 /**
- * On a never-translate site only explicitly invoked features stay mounted:
- * the float ball (so the user can undo the choice) and AI writing (opened by
- * shortcut or context menu). Subtitles, input triggers, selection, hover,
- * and search enhancement would otherwise keep sending page text out.
+ * On a never-translate site, drop the features that send page text out on
+ * their own (subtitle tracks, search queries). Input, selection, and hover
+ * translation stay: each needs an explicit trigger from the user. Direct
+ * hover, which needs none, is skipped by the TranslationController.
  */
 export function mountableFeatures(
   config: Config,
   hostname: string,
 ): readonly FeatureInit[] {
   return isNeverTranslateSite(config, hostname)
-    ? [initFloatBall, initAiWriting]
+    ? ALL_FEATURES.filter((init) => !AUTOMATIC_FEATURES.has(init))
     : ALL_FEATURES;
 }
 

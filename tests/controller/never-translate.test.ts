@@ -7,6 +7,7 @@ import { isNeverTranslateSite } from "../../src/content/controller/patterns";
 import { init as initAiWriting } from "../../src/content/features/ai-writing";
 import { init as initFloatBall } from "../../src/content/features/float-ball";
 import { init as initInputTranslation } from "../../src/content/features/input-translate";
+import { init as initSearchEnhancement } from "../../src/content/features/search-enhancement";
 import { initSubtitles } from "../../src/content/features/subtitle";
 import { DEFAULT_CONFIG } from "../../src/shared/config";
 import type { Config } from "../../src/shared/types";
@@ -29,17 +30,24 @@ describe("never-translate sites", () => {
     );
   });
 
-  it("mounts only explicitly invoked features on a never-translate site", () => {
+  it("drops only features that send text without a user action", () => {
     const features = mountableFeatures(
       config(["bank.example"]),
       "bank.example",
     );
-    expect(features).toEqual([initFloatBall, initAiWriting]);
-    expect(features).not.toContain(initInputTranslation);
     expect(features).not.toContain(initSubtitles);
+    expect(features).not.toContain(initSearchEnhancement);
+    // Explicitly triggered features stay available on never-translate sites.
+    expect(features).toEqual(
+      expect.arrayContaining([
+        initFloatBall,
+        initAiWriting,
+        initInputTranslation,
+      ]),
+    );
 
     expect(mountableFeatures(config([]), "bank.example")).toContain(
-      initInputTranslation,
+      initSubtitles,
     );
   });
 

@@ -30,6 +30,7 @@ import {
   PageBadgeController,
   type BadgeActionApi,
 } from "./badge";
+import { registerCacheCleanup } from "./cache-cleanup";
 import { routeExtensionCommand } from "./commands";
 import { createContextMenus, routeContextMenuClick } from "./context-menus";
 import { matchRule, validateRule } from "./rules/match";
@@ -77,18 +78,11 @@ initPdfInterception();
 registerChatgptOauthPolling();
 const pageBadges = new PageBadgeController(actionApi());
 
-// Enforce the cache retention period daily. It used to run only on install or
-// update, so old translations piled up for as long as the version stayed put.
-const CACHE_CLEANUP_ALARM = "translationCache.cleanup";
-void browser.alarms
-  .create(CACHE_CLEANUP_ALARM, { periodInMinutes: 24 * 60 })
-  .catch(() => undefined);
-browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== CACHE_CLEANUP_ALARM) return;
-  void loadConfig()
-    .then((config) => cleanupTranslationCache(config.cache.maxAgeDays))
-    .catch(() => undefined);
-});
+// Retention used to run only on install or update, so old translations piled
+// up for as long as the version stayed put.
+void registerCacheCleanup(
+  async () => (await loadConfig()).cache.maxAgeDays,
+).catch(() => undefined);
 
 async function configuredRule(url: string): Promise<Rule> {
   const [config, remoteRules] = await Promise.all([

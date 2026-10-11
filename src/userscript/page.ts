@@ -14,6 +14,7 @@ import {
   setLoading,
   setMode,
 } from "../content/render/inject";
+import { isUserEvent } from "../content/features/trusted";
 import { detectLang, isSameLang, LANGUAGE_CODES } from "../shared/lang";
 import type { LangCode, Paragraph, Rule } from "../shared/types";
 import { t, userscriptLocale, type UserscriptLocale } from "./i18n";
@@ -266,7 +267,8 @@ function mountMenu(
 ): () => void {
   const host = document.createElement("div");
   host.dataset.imt = "userscript-menu";
-  const shadow = host.attachShadow({ mode: "open" });
+  // Closed so page scripts cannot click the controls or read the panel.
+  const shadow = host.attachShadow({ mode: "closed" });
   const style = document.createElement("style");
   style.textContent = `
     :host { all: initial; }
@@ -341,25 +343,30 @@ function mountMenu(
     }
   };
 
-  launcher.addEventListener("click", () => {
+  launcher.addEventListener("click", (event) => {
+    if (!isUserEvent(event)) return;
     panel.hidden = !panel.hidden;
     launcher.setAttribute("aria-expanded", String(!panel.hidden));
   });
-  action.addEventListener("click", () => {
+  action.addEventListener("click", (event) => {
+    if (!isUserEvent(event)) return;
     controller.toggle();
     action.textContent = controller.isTranslated()
       ? t("showOriginal", locale)
       : t("translate", locale);
   });
-  language.addEventListener("change", () => {
+  language.addEventListener("change", (event) => {
+    if (!isUserEvent(event)) return;
     void save({ targetLanguage: language.value as LangCode });
   });
-  mode.addEventListener("change", () => {
+  mode.addEventListener("change", (event) => {
+    if (!isUserEvent(event)) return;
     void save({
       translationMode: mode.value === "translation" ? "translation" : "dual",
     });
   });
-  theme.addEventListener("change", () => {
+  theme.addEventListener("change", (event) => {
+    if (!isUserEvent(event)) return;
     void save({ theme: theme.value as UserscriptTheme });
   });
 

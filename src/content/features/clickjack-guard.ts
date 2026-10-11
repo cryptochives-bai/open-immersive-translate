@@ -10,17 +10,30 @@ export interface ControlSize {
   max: number;
 }
 
+/** Properties that can hide or disguise an element while it still takes clicks. */
+const MUST_BE_NONE = [
+  "filter",
+  "clip-path",
+  "mask-image",
+  "-webkit-mask-image",
+  "mask-border-source",
+  "backdrop-filter",
+];
+
+function unset(value: string): boolean {
+  return value === "" || value === "none";
+}
+
 function drawnNormally(element: Element, view: Window): boolean {
   const style = view.getComputedStyle(element);
   const opacity = style.opacity === "" ? 1 : Number(style.opacity);
-  const clipPath = style.getPropertyValue("clip-path");
-  const filter = style.getPropertyValue("filter");
+  const blend = style.getPropertyValue("mix-blend-mode");
   return (
     opacity >= 1 &&
     style.visibility !== "hidden" &&
     style.visibility !== "collapse" &&
-    (filter === "" || filter === "none") &&
-    (clipPath === "" || clipPath === "none")
+    (blend === "" || blend === "normal") &&
+    MUST_BE_NONE.every((property) => unset(style.getPropertyValue(property)))
   );
 }
 

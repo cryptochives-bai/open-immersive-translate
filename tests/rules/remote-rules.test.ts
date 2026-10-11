@@ -135,6 +135,8 @@ describe("remote rules", () => {
         matches: [...remoteRule.matches, `https://*/${"*".repeat(600)}`],
         excludeSelectors: [],
         excludeTags: [],
+        likePreSelectors: ["textarea", "[contenteditable]"],
+        isTransformPreTagNewLine: true,
         additionalExcludeSelectors: [".ad"],
         glossaries: Array.from({ length: 1_000 }, (_, index) => ({
           k: `term${index}`,
@@ -144,6 +146,8 @@ describe("remote rules", () => {
     ]);
     expect(bounded).not.toHaveProperty("excludeSelectors");
     expect(bounded).not.toHaveProperty("excludeTags");
+    expect(bounded).not.toHaveProperty("likePreSelectors");
+    expect(bounded).not.toHaveProperty("isTransformPreTagNewLine");
     expect(bounded).toMatchObject({ additionalExcludeSelectors: [".ad"] });
     expect(bounded!.matches).toEqual(remoteRule.matches);
     expect(bounded!.glossaries!.length).toBeLessThan(200);

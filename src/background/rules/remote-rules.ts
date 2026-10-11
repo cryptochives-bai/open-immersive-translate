@@ -60,6 +60,11 @@ const REMOTE_RULE_BLOCKED_FIELDS = [
   // scripts out of translation); feeds may only extend them via additional*.
   "excludeSelectors",
   "excludeTags",
+  // Pre-like elements are emitted before the exclusion checks, so these
+  // could pull textareas and contenteditable editors into translation.
+  "likePreSelectors",
+  "isTransformPreTagNewLine",
+  "advanceTransformPreTagNewLine",
 ] as const;
 
 /** Every glossary entry is sent with every AI translation request. */

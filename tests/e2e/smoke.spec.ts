@@ -647,6 +647,27 @@ test("an invisible, enlarged float ball does not turn a click into page translat
 
     await expect(page.locator("font[data-imt='target']")).toHaveCount(0);
 
+    // A mask hides the ball without changing its size, opacity, or IOv2 state.
+    await page.evaluate(() =>
+      document.querySelectorAll("style").forEach((style) => {
+        if (style.textContent?.includes("float-ball")) style.remove();
+      }),
+    );
+    await page.addStyleTag({
+      content:
+        "[data-imt='float-ball']{mask-image:linear-gradient(#0000,#0000)!important;-webkit-mask-image:linear-gradient(#0000,#0000)!important}",
+    });
+    await page.waitForTimeout(300);
+    const masked = (await page
+      .locator("[data-imt='float-ball']")
+      .boundingBox())!;
+    await page.mouse.click(
+      masked.x + masked.width / 2,
+      masked.y + masked.height / 2,
+    );
+    await page.waitForTimeout(1_500);
+    await expect(page.locator("font[data-imt='target']")).toHaveCount(0);
+
     // Control: once the page stops tampering, a real click on the ball works.
     await page.evaluate(() =>
       document.querySelectorAll("style").forEach((style) => {

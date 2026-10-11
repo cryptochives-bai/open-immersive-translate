@@ -365,6 +365,38 @@ describe("TranslationScheduler", () => {
     }
   });
 
+  it("fails fast when Retry-After exceeds the retry ceiling", async () => {
+    const service = new FakeService(
+      "primary",
+      10,
+      100,
+      { rps: 10_000, concurrency: 1 },
+      async () => {
+        throw new TranslateError("rate_limit", "quota exhausted", {
+          serviceId: "primary",
+          details: { status: 429, retryAfter: 3_600 },
+        });
+      },
+    );
+    const scheduler = new TranslationScheduler({
+      cache: memoryCache(),
+      services: [service],
+      configProvider: async () =>
+        ({ cache: { enabled: false, maxAgeDays: 30 } }) as never,
+    });
+    const started = Date.now();
+
+    await scheduler.translateParagraphs(
+      request({ items: [{ id: "a", text: "one" }] }),
+    );
+    await scheduler.translateParagraphs(
+      request({ items: [{ id: "b", text: "two" }] }),
+    );
+
+    expect(service.calls).toEqual([["one"], ["two"]]);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it("skips an unsupported primary service and uses its fallback", async () => {
     const primary = new FakeService(
       "primary",

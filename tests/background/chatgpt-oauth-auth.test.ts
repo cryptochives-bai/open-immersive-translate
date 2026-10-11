@@ -363,6 +363,24 @@ describe("ChatGPT OAuth tokens", () => {
     });
   });
 
+  it("keeps the login when the token endpoint answers 403", async () => {
+    state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
+      tokens: {
+        accessToken: jwt({ exp: 1 }),
+        refreshToken: "refresh-ok",
+        obtainedAt: 0,
+      },
+    };
+    await expect(
+      refreshChatgptOauthTokens({
+        fetch: vi.fn(async () => jsonResponse({}, 403)),
+      }),
+    ).rejects.toMatchObject({ code: "AUTH" });
+    expect(state.stored[CHATGPT_AUTH_STORAGE_KEY]).toMatchObject({
+      tokens: { refreshToken: "refresh-ok" },
+    });
+  });
+
   it("does not resurrect tokens when the user logs out mid-refresh", async () => {
     const now = 1_800_000_000_000;
     state.stored[CHATGPT_AUTH_STORAGE_KEY] = {

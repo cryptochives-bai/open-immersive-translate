@@ -606,14 +606,14 @@ export class TranslationScheduler {
 
     const errors = retryIndexes.map((index) => first[index]!.error);
     const delay = retryDelayMs(errors);
+    // A long Retry-After (quota exhausted) fails the batch right away instead
+    // of leaving every queued request spinning for a minute.
+    if (delay > MAX_RETRY_AFTER_MS) return first;
     if (errors.some((error) => errorCode(error) === "RATE_LIMIT")) {
       // Back off the whole service, not just this batch, so parallel batches
       // stop hammering an endpoint that is already rejecting us.
-      this.queueFor(service).pauseUntil(
-        Date.now() + Math.min(delay, MAX_RETRY_AFTER_MS),
-      );
+      this.queueFor(service).pauseUntil(Date.now() + delay);
     }
-    if (delay > MAX_RETRY_AFTER_MS) return first;
     await abortableDelay(delay, signal);
     const retried = await call(retryIndexes.map((index) => texts[index]));
     const merged = [...first];

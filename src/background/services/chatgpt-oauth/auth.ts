@@ -581,9 +581,10 @@ async function performRefresh(
       response,
       `ChatGPT 令牌刷新失败（HTTP ${response.status}）。`,
     );
-    // 400/401/403 mean the refresh token is rejected for good. Forget it so
-    // every later batch does not replay a dead token against the auth server.
-    if ([400, 401, 403].includes(response.status)) {
+    // 400 (invalid_grant) and 401 mean the refresh token is rejected for
+    // good. Forget it so later batches do not replay a dead token. A 403 can
+    // be a transient WAF/Cloudflare challenge, so that keeps the login.
+    if (response.status === 400 || response.status === 401) {
       await replaceTokensIfUnchanged(tokens.refreshToken, {
         error: { message: `ChatGPT 登录已失效，请重新登录。（${message}）` },
       });

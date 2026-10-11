@@ -45,7 +45,7 @@ describe("subtitle feature initialization", () => {
     expect(browserMock.runtime.sendMessage).toHaveBeenCalledWith({
       type: "setConfig",
       patch: {
-        subtitle: expect.objectContaining({ preTranslation: false }),
+        subtitle: expect.objectContaining({ preTranslation: true }),
       },
     });
     dispose();

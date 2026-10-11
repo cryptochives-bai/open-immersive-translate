@@ -54,6 +54,7 @@ import {
   glossaryForDomain,
   resolveTranslationMode,
   resolveTranslationTheme,
+  isNeverTranslateSite,
   shouldAutoTranslatePage,
 } from "./patterns";
 import { pageTranslationState } from "./page-state";
@@ -400,7 +401,12 @@ export class TranslationController implements PageControllerActions {
   private installDirectHover(): void {
     this.stopDirectHover?.();
     this.stopDirectHover = undefined;
-    if (!this.hoverDirectly) return;
+    if (
+      !this.hoverDirectly ||
+      isNeverTranslateSite(this.config, window.location.hostname)
+    ) {
+      return;
+    }
     this.stopDirectHover = installDirectHoverTranslation(
       (container) => this.translateParagraph(container),
       this.rule.allBlockTags ?? [],

@@ -52,7 +52,9 @@ export function resolveTranslationTheme(
   rule: AdvancedPageRule,
   url: string,
 ): string {
-  for (const [theme, globs] of Object.entries(config.translationThemePatterns ?? {})) {
+  for (const [theme, globs] of Object.entries(
+    config.translationThemePatterns ?? {},
+  )) {
     if (globs.some((glob) => globMatches(url, glob))) return theme;
   }
   return rule.theme ?? config.theme;
@@ -64,15 +66,21 @@ function siteMatches(hostname: string, site: string): boolean {
   return host === normalized || host.endsWith(`.${normalized}`);
 }
 
+/** True when the user marked this host (or a parent domain) as never translate. */
+export function isNeverTranslateSite(
+  config: { readonly neverTranslateSites: readonly string[] },
+  hostname: string,
+): boolean {
+  return config.neverTranslateSites.some((site) => siteMatches(hostname, site));
+}
+
 export function shouldAutoTranslatePage(
   config: AdvancedPageConfig,
   rule: AdvancedPageRule,
   hostname: string,
   pageLanguage: LangCode,
 ): boolean {
-  if (config.neverTranslateSites.some((site) => siteMatches(hostname, site))) {
-    return false;
-  }
+  if (isNeverTranslateSite(config, hostname)) return false;
   if (
     pageLanguage !== "auto" &&
     config.neverTranslateLangs.some(

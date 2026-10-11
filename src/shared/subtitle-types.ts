@@ -34,7 +34,7 @@ export interface SubtitleConfig {
 export const DEFAULT_SUBTITLE_CONFIG: SubtitleConfig = {
   enabled: true,
   youtube: true,
-  preTranslation: true,
+  preTranslation: false,
   fontSize: 24,
   sourceColor: "#ffffff",
   translationColor: "#ffffff",

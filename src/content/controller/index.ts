@@ -22,6 +22,7 @@ import { onUrlChange } from "../observe/url-change";
 import { isPageCommandId, runPageCommand } from "./commands";
 import { frameHasEnoughText } from "./frame-sync";
 import { controllerT } from "./i18n";
+import { isNeverTranslateSite } from "./patterns";
 import { TranslationController } from "./translation-controller";
 
 export { TranslationController } from "./translation-controller";
@@ -73,6 +74,33 @@ function showSelectionTranslation(
     });
 }
 
+type FeatureInit = (context: FeatureContext) => () => void;
+
+const ALL_FEATURES: readonly FeatureInit[] = [
+  initFloatBall,
+  initHoverTranslation,
+  initSelectionTranslation,
+  initInputTranslation,
+  initAiWriting,
+  initSearchEnhancement,
+  initSubtitles,
+];
+
+/**
+ * On a never-translate site only explicitly invoked features stay mounted:
+ * the float ball (so the user can undo the choice) and AI writing (opened by
+ * shortcut or context menu). Subtitles, input triggers, selection, hover,
+ * and search enhancement would otherwise keep sending page text out.
+ */
+export function mountableFeatures(
+  config: Config,
+  hostname: string,
+): readonly FeatureInit[] {
+  return isNeverTranslateSite(config, hostname)
+    ? [initFloatBall, initAiWriting]
+    : ALL_FEATURES;
+}
+
 /** Register the phase-3 page controller. The content entry calls this once. */
 export async function init(): Promise<() => void> {
   const debugState: ImtPhase3DebugState = {
@@ -122,15 +150,10 @@ export async function init(): Promise<() => void> {
       toggleTranslate: () => current.toggleTranslate(),
       isTranslated: () => current.isTranslated(),
     };
-    featureDisposers = [
-      initFloatBall(context),
-      initHoverTranslation(context),
-      initSelectionTranslation(context),
-      initInputTranslation(context),
-      initAiWriting(context),
-      initSearchEnhancement(context),
-      initSubtitles(context),
-    ];
+    featureDisposers = mountableFeatures(
+      current.config,
+      window.location.hostname,
+    ).map((initFeature) => initFeature(context));
   };
 
   const refresh = async (incomingConfig?: Config): Promise<void> => {

@@ -99,7 +99,7 @@ export class SubtitleEngine {
     private readonly ctx: Pick<FeatureContext, "config" | "translateText">,
     options: SubtitleEngineOptions = {},
   ) {
-    this.preTranslation = options.preTranslation ?? true;
+    this.preTranslation = options.preTranslation ?? false;
     this.rollingWindowSeconds =
       options.rollingWindowSeconds ?? DEFAULT_ROLLING_WINDOW_SECONDS;
     this.cache = options.cache ?? new Map();

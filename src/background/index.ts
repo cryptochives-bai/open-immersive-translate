@@ -46,7 +46,6 @@ import { runServiceTest } from "./service-test";
 import {
   cancelChatgptOauth,
   getChatgptOauthStatus,
-  importCodexCliAuth,
   logoutChatgptOauth,
   registerChatgptOauthPolling,
   startChatgptOauth,
@@ -231,8 +230,6 @@ browser.runtime.onMessage.addListener(
         return cancelChatgptOauth();
       case "chatgptOauth.logout":
         return logoutChatgptOauth();
-      case "chatgptOauth.importCli":
-        return importCodexCliAuth(request.json);
       case "getCacheStats":
         return getTranslationCacheCount().then((count) => ({ count }));
       case "clearCache":

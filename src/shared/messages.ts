@@ -152,11 +152,6 @@ export interface ChatgptOauthLogoutMessage {
   type: "chatgptOauth.logout";
 }
 
-export interface ChatgptOauthImportCliMessage {
-  type: "chatgptOauth.importCli";
-  json: string;
-}
-
 export type ServiceTestResult =
   | { ok: true; latencyMs: number; sample: string }
   | { ok: false; latencyMs: number; error: string };
@@ -295,7 +290,6 @@ export type Msg =
   | ChatgptOauthStatusMessage
   | ChatgptOauthCancelMessage
   | ChatgptOauthLogoutMessage
-  | ChatgptOauthImportCliMessage
   | GetCacheStatsMessage
   | ClearCacheMessage
   | ValidateRuleMessage
@@ -326,7 +320,6 @@ export type BackgroundRequest =
   | ChatgptOauthStatusMessage
   | ChatgptOauthCancelMessage
   | ChatgptOauthLogoutMessage
-  | ChatgptOauthImportCliMessage
   | GetCacheStatsMessage
   | ClearCacheMessage
   | ValidateRuleMessage
@@ -368,7 +361,6 @@ export type BackgroundResponse<T extends BackgroundRequest> =
                       | ChatgptOauthStatusMessage
                       | ChatgptOauthCancelMessage
                       | ChatgptOauthLogoutMessage
-                      | ChatgptOauthImportCliMessage
                   ? ChatgptOauthStatus
                   : T extends GetCacheStatsMessage
                     ? CacheStatsResult

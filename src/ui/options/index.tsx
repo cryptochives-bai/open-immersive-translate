@@ -686,8 +686,6 @@ function ChatgptOauthField({
 }): preact.JSX.Element {
   const [status, setStatus] = useState<ChatgptOauthStatus>();
   const [busy, setBusy] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importJson, setImportJson] = useState("");
   const [actionError, setActionError] = useState<string>();
   const enabledForSession = useRef(false);
 
@@ -759,6 +757,9 @@ function ChatgptOauthField({
   const loggedOut = !status || status.state === "logged_out";
   return (
     <div class="chatgpt-auth-field">
+      <p class="ui-status ui-status-warning" role="note">
+        {t("oauth.riskNotice")}
+      </p>
       {loggedOut && (
         <Button
           variant="primary"
@@ -842,6 +843,7 @@ function ChatgptOauthField({
           >
             {t("oauth.logout")}
           </Button>
+          <p class="ui-status">{t("oauth.logoutHint")}</p>
         </div>
       )}
 
@@ -867,32 +869,6 @@ function ChatgptOauthField({
           {actionError}
         </p>
       )}
-
-      <details
-        open={importOpen}
-        onToggle={(event) => setImportOpen(event.currentTarget.open)}
-      >
-        <summary>{t("oauth.importTitle")}</summary>
-        <p class="ui-status">{t("oauth.importHint")}</p>
-        <textarea
-          aria-label={t("oauth.importTitle")}
-          value={importJson}
-          onInput={(event) => setImportJson(event.currentTarget.value)}
-        />
-        <Button
-          disabled={busy || !importJson.trim()}
-          onClick={() =>
-            void run(() =>
-              sendToBackground({
-                type: "chatgptOauth.importCli",
-                json: importJson,
-              }),
-            )
-          }
-        >
-          {t("oauth.importButton")}
-        </Button>
-      </details>
     </div>
   );
 }

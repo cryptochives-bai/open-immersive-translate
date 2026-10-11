@@ -237,3 +237,10 @@ a {
 .ui-status-error {
   color: var(--ui-danger);
 }
+
+.ui-status-warning {
+  padding: 8px 10px;
+  border-left: 3px solid var(--ui-danger);
+  color: inherit;
+  background: color-mix(in srgb, var(--ui-danger) 8%, transparent);
+}

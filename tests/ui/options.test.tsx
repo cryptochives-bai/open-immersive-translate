@@ -287,7 +287,8 @@ describe("Options", () => {
     expect(
       await screen.findByRole("button", { name: "登录 ChatGPT" }),
     ).toBeTruthy();
-    expect(screen.getByText("从 Codex CLI 导入")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toContain("Codex CLI");
+    expect(screen.queryByText("从 Codex CLI 导入")).toBeNull();
   });
 
   it("writes ChatGPT reasoning settings and hides unsupported max options", async () => {

@@ -110,9 +110,10 @@ const zhCN = {
   "oauth.logout": "退出登录",
   "oauth.retry": "重新登录",
   "oauth.statusFailed": "无法读取 ChatGPT 登录状态",
-  "oauth.importTitle": "从 Codex CLI 导入",
-  "oauth.importHint": "粘贴 ~/.codex/auth.json 的完整内容。",
-  "oauth.importButton": "导入并登录",
+  "oauth.riskNotice":
+    "此登录沿用 OpenAI Codex CLI 的 OAuth 客户端身份（client_id），并非 OpenAI 为本扩展签发。OpenAI 可能将这种用法视为违反服务条款，账号存在被限流或停用的风险，建议不要使用主要工作账号。",
+  "oauth.logoutHint":
+    "退出登录只会删除本机保存的令牌，不会在 OpenAI 端撤销授权。如需让令牌立即失效，请在 ChatGPT 账号设置中退出所有设备。",
   "features.input": "输入框翻译",
   "features.inputTrigger": "触发方式",
   "features.triggerSlash": "以 // 开头",
@@ -372,9 +373,10 @@ const en: Record<I18nKey, string> = {
   "oauth.logout": "Log out",
   "oauth.retry": "Log in again",
   "oauth.statusFailed": "Could not read ChatGPT login status",
-  "oauth.importTitle": "Import from Codex CLI",
-  "oauth.importHint": "Paste the complete contents of ~/.codex/auth.json.",
-  "oauth.importButton": "Import and log in",
+  "oauth.riskNotice":
+    "This login reuses the OpenAI Codex CLI's OAuth client identity (client_id); OpenAI did not issue it to this extension. OpenAI may treat this as a terms-of-service violation, so the account could be rate-limited or suspended. Avoid using your main work account.",
+  "oauth.logoutHint":
+    "Logging out only deletes the tokens stored on this device; it does not revoke them at OpenAI. To invalidate them right away, log out of all devices in your ChatGPT account settings.",
   "features.input": "Input translation",
   "features.inputTrigger": "Trigger",
   "features.triggerSlash": "Starts with //",
@@ -522,6 +524,10 @@ const en: Record<I18nKey, string> = {
 const zhTW: Partial<Record<I18nKey, string>> = {
   ...zhCN,
   "app.name": "雙語翻譯",
+  "oauth.riskNotice":
+    "此登入沿用 OpenAI Codex CLI 的 OAuth 用戶端身分（client_id），並非 OpenAI 為本擴充功能核發。OpenAI 可能將這種用法視為違反服務條款，帳號有被限流或停用的風險，建議不要使用主要工作帳號。",
+  "oauth.logoutHint":
+    "登出只會刪除本機儲存的權杖，不會在 OpenAI 端撤銷授權。如需讓權杖立即失效，請在 ChatGPT 帳號設定中登出所有裝置。",
   "common.loading": "正在載入…",
   "common.saveFailed": "儲存失敗",
   "common.none": "無",
@@ -760,6 +766,10 @@ const zhTW: Partial<Record<I18nKey, string>> = {
 const ja: Partial<Record<I18nKey, string>> = {
   ...en,
   "app.name": "バイリンガル翻訳",
+  "oauth.riskNotice":
+    "このログインは OpenAI Codex CLI の OAuth クライアント ID（client_id）を流用しており、OpenAI がこの拡張機能に発行したものではありません。利用規約違反と見なされ、アカウントがレート制限または停止される可能性があります。メインの業務用アカウントでの使用は避けてください。",
+  "oauth.logoutHint":
+    "ログアウトはこの端末に保存されたトークンを削除するだけで、OpenAI 側では取り消されません。すぐに無効化するには、ChatGPT のアカウント設定ですべてのデバイスからログアウトしてください。",
   "common.loading": "読み込み中…",
   "common.saveFailed": "保存できませんでした",
   "common.none": "なし",

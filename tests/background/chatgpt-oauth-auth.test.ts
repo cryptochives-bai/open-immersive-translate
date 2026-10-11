@@ -52,8 +52,8 @@ import {
   decodeChatgptAccount,
   decodeJwtClaims,
   getChatgptOauthStatus,
-  importCodexCliAuth,
   isAccessTokenExpiring,
+  logoutChatgptOauth,
   pollChatgptOauth,
   registerChatgptOauthPolling,
   refreshChatgptOauthTokens,
@@ -276,19 +276,23 @@ describe("ChatGPT OAuth tokens", () => {
   });
 
   it("classifies refresh failures", async () => {
-    state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
-      tokens: {
-        accessToken: jwt({ exp: 1 }),
-        refreshToken: "refresh-old",
-        obtainedAt: 0,
-      },
+    const seed = () => {
+      state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
+        tokens: {
+          accessToken: jwt({ exp: 1 }),
+          refreshToken: "refresh-old",
+          obtainedAt: 0,
+        },
+      };
     };
+    seed();
 
     await expect(
       refreshChatgptOauthTokens({
         fetch: vi.fn(async () => jsonResponse({}, 401)),
       }),
     ).rejects.toMatchObject({ code: "AUTH", retryable: false });
+    seed();
     await expect(
       refreshChatgptOauthTokens({
         fetch: vi.fn(async () => jsonResponse({}, 429, { "Retry-After": "9" })),
@@ -299,35 +303,93 @@ describe("ChatGPT OAuth tokens", () => {
     });
   });
 
-  it("imports valid Codex CLI JSON and rejects invalid or expired input", async () => {
+  it("shares one refresh request between concurrent callers", async () => {
     const now = 1_800_000_000_000;
-    const accessToken = jwt({ exp: now / 1_000 + 3_600 });
-    await expect(
-      importCodexCliAuth(
-        JSON.stringify({
-          tokens: {
-            access_token: accessToken,
-            refresh_token: "refresh-cli",
-            account_id: "ignored-account-field",
-          },
-        }),
-        now,
-      ),
-    ).resolves.toMatchObject({ state: "authenticated" });
-    await expect(importCodexCliAuth("not json", now)).rejects.toMatchObject({
-      code: "INVALID_CONFIG",
+    state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
+      tokens: {
+        accessToken: jwt({ exp: now / 1_000 - 1 }),
+        refreshToken: "refresh-old",
+        obtainedAt: 0,
+      },
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetchMock = vi.fn(async () => {
+      await gate;
+      return jsonResponse({
+        access_token: jwt({ exp: now / 1_000 + 3_600 }),
+        refresh_token: "refresh-new",
+      });
     });
+
+    const first = refreshChatgptOauthTokens({
+      fetch: fetchMock,
+      now: () => now,
+    });
+    const second = refreshChatgptOauthTokens({
+      fetch: fetchMock,
+      now: () => now,
+    });
+    release();
+
+    const [a, b] = await Promise.all([first, second]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(a.refreshToken).toBe("refresh-new");
+    expect(b).toBe(a);
+  });
+
+  it("forgets a rejected refresh token instead of replaying it", async () => {
+    state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
+      tokens: {
+        accessToken: jwt({ exp: 1 }),
+        refreshToken: "refresh-dead",
+        obtainedAt: 0,
+      },
+    };
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ error: "invalid_grant" }, 400),
+    );
+
     await expect(
-      importCodexCliAuth(
-        JSON.stringify({
-          tokens: {
-            access_token: jwt({ exp: now / 1_000 - 1 }),
-            refresh_token: "refresh-cli",
-          },
-        }),
-        now,
-      ),
+      refreshChatgptOauthTokens({ fetch: fetchMock }),
     ).rejects.toMatchObject({ code: "AUTH" });
+    await expect(
+      refreshChatgptOauthTokens({ fetch: fetchMock }),
+    ).rejects.toMatchObject({ code: "AUTH" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await expect(getChatgptOauthStatus()).resolves.toMatchObject({
+      state: "error",
+    });
+  });
+
+  it("does not resurrect tokens when the user logs out mid-refresh", async () => {
+    const now = 1_800_000_000_000;
+    state.stored[CHATGPT_AUTH_STORAGE_KEY] = {
+      tokens: {
+        accessToken: jwt({ exp: 1 }),
+        refreshToken: "refresh-old",
+        obtainedAt: 0,
+      },
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const refreshing = refreshChatgptOauthTokens({
+      fetch: vi.fn(async () => {
+        await gate;
+        return jsonResponse({
+          access_token: jwt({ exp: now / 1_000 + 3_600 }),
+          refresh_token: "refresh-new",
+        });
+      }),
+      now: () => now,
+    });
+
+    await logoutChatgptOauth();
+    release();
+
+    await expect(refreshing).rejects.toMatchObject({ code: "AUTH" });
+    expect(state.stored[CHATGPT_AUTH_STORAGE_KEY]).toBeUndefined();
   });
 
   it("times out a persisted pending login after 15 minutes", async () => {

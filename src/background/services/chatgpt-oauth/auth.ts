@@ -528,10 +528,27 @@ export async function logoutChatgptOauth(): Promise<ChatgptOauthStatus> {
   return { state: "logged_out" };
 }
 
-export async function refreshChatgptOauthTokens(
+let inflightRefresh: Promise<ChatgptOauthTokens> | undefined;
+
+/**
+ * Exchange the refresh token for new tokens.
+ *
+ * Concurrent callers (two translation batches hitting an expiring token, or
+ * a 401 retry) share one request: OpenAI rotates refresh tokens, so a second
+ * exchange with the same token would fail and could invalidate the login.
+ */
+export function refreshChatgptOauthTokens(
   overrides: Partial<AuthDependencies> = {},
 ): Promise<ChatgptOauthTokens> {
-  const runtime = dependencies(overrides);
+  inflightRefresh ??= performRefresh(dependencies(overrides)).finally(() => {
+    inflightRefresh = undefined;
+  });
+  return inflightRefresh;
+}
+
+async function performRefresh(
+  runtime: AuthDependencies,
+): Promise<ChatgptOauthTokens> {
   const state = await readState();
   const tokens = state.tokens;
   if (!tokens?.refreshToken) {
@@ -571,18 +588,22 @@ export async function refreshChatgptOauthTokens(
     });
   }
   if (!response.ok) {
-    throw new TranslateError(
-      "auth",
-      await responseMessage(
-        response,
-        `ChatGPT 令牌刷新失败（HTTP ${response.status}）。`,
-      ),
-      {
-        serviceId: "chatgpt",
-        retryable: false,
-        details: { status: response.status },
-      },
+    const message = await responseMessage(
+      response,
+      `ChatGPT 令牌刷新失败（HTTP ${response.status}）。`,
     );
+    // 400/401/403 mean the refresh token is rejected for good. Forget it so
+    // every later batch does not replay a dead token against the auth server.
+    if ([400, 401, 403].includes(response.status)) {
+      await replaceTokensIfUnchanged(tokens.refreshToken, {
+        error: { message: `ChatGPT 登录已失效，请重新登录。（${message}）` },
+      });
+    }
+    throw new TranslateError("auth", message, {
+      serviceId: "chatgpt",
+      retryable: false,
+      details: { status: response.status },
+    });
   }
   let payload: unknown;
   try {
@@ -615,8 +636,30 @@ export async function refreshChatgptOauthTokens(
       tokens.tokenType,
     obtainedAt: runtime.now(),
   };
-  await writeState({ tokens: refreshed });
+  const stored = await replaceTokensIfUnchanged(tokens.refreshToken, {
+    tokens: refreshed,
+  });
+  if (!stored) {
+    throw new TranslateError("auth", "ChatGPT 登录状态已变更，请重试。", {
+      serviceId: "chatgpt",
+      retryable: false,
+    });
+  }
   return refreshed;
+}
+
+/**
+ * Write `next` only if the stored login still uses `refreshToken`. A logout
+ * or a fresh login during the refresh request must not be overwritten.
+ */
+async function replaceTokensIfUnchanged(
+  refreshToken: string,
+  next: StoredAuthState,
+): Promise<boolean> {
+  const current = await readState();
+  if (current.tokens?.refreshToken !== refreshToken) return false;
+  await writeState(next);
+  return true;
 }
 
 export async function getValidChatgptOauthTokens(
@@ -633,57 +676,6 @@ export async function getValidChatgptOauthTokens(
   return isAccessTokenExpiring(tokens.accessToken, runtime.now())
     ? refreshChatgptOauthTokens(runtime)
     : tokens;
-}
-
-export async function importCodexCliAuth(
-  json: string,
-  now = Date.now(),
-): Promise<ChatgptOauthStatus> {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(json.replace(/^\uFEFF/, ""));
-  } catch (error) {
-    throw new TranslateError(
-      "invalid_config",
-      "Codex CLI auth.json 不是有效 JSON。",
-      {
-        serviceId: "chatgpt",
-        retryable: false,
-        cause: error,
-      },
-    );
-  }
-  const rawTokens =
-    isRecord(payload) && isRecord(payload.tokens) ? payload.tokens : undefined;
-  const accessToken = rawTokens
-    ? nonEmptyString(rawTokens.access_token)
-    : undefined;
-  const refreshToken = rawTokens
-    ? nonEmptyString(rawTokens.refresh_token)
-    : undefined;
-  if (!accessToken || !refreshToken) {
-    throw new TranslateError(
-      "invalid_config",
-      "Codex CLI auth.json 缺少 tokens.access_token 或 tokens.refresh_token。",
-      { serviceId: "chatgpt", retryable: false },
-    );
-  }
-  if (isAccessTokenExpiring(accessToken, now, 0)) {
-    throw new TranslateError("auth", "Codex CLI 访问令牌已过期。", {
-      serviceId: "chatgpt",
-      retryable: false,
-    });
-  }
-  const tokens: ChatgptOauthTokens = {
-    accessToken,
-    refreshToken,
-    idToken: rawTokens ? nonEmptyString(rawTokens.id_token) : undefined,
-    tokenType: "Bearer",
-    obtainedAt: now,
-  };
-  await clearPoll();
-  await writeState({ tokens });
-  return statusFromState({ tokens });
 }
 
 export async function resumeChatgptOauthPolling(): Promise<void> {

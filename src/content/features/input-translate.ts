@@ -97,12 +97,8 @@ function readLanguagePrefix(
       };
     }
   }
-  if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(token)) {
-    return {
-      language: token,
-      length: startingTriggerKey.length + separator + 1,
-    };
-  }
+  // Only configured aliases count. A generic "two or three letters" rule read
+  // "//how are you" as target language "how" and dropped the first word.
   return undefined;
 }
 

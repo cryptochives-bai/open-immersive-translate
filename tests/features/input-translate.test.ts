@@ -49,6 +49,24 @@ describe("input translation", () => {
     });
   });
 
+  it("treats only configured aliases as a language prefix", () => {
+    for (const sentence of [
+      "how are you",
+      "hi there",
+      "it is ok",
+      "can you help",
+    ]) {
+      expect(parseTranslationInput(`//${sentence}`, "fr")).toEqual({
+        text: sentence,
+        targetLanguage: "fr",
+      });
+    }
+    expect(parseTranslationInput("//zh-tw 你好", "fr")).toEqual({
+      text: "你好",
+      targetLanguage: "zh-TW",
+    });
+  });
+
   it("detects three spaces only inside the 1.5 second window", () => {
     expect(isTripleSpaceTrigger([0, 700, 1_500])).toBe(true);
     expect(isTripleSpaceTrigger([0, 700, 1_501])).toBe(false);
@@ -222,20 +240,23 @@ describe("input translation", () => {
     ["text", "current-password"],
     ["text", "cc-number"],
     ["email", undefined],
-  ])("never reads %s fields with autocomplete=%s", async (type, autocomplete) => {
-    const input = document.createElement("input");
-    input.type = type;
-    if (autocomplete) input.setAttribute("autocomplete", autocomplete);
-    input.value = "//secret";
-    document.body.append(input);
-    const translateText = vi.fn().mockResolvedValue("unused");
-    const dispose = init(context(translateText));
+  ])(
+    "never reads %s fields with autocomplete=%s",
+    async (type, autocomplete) => {
+      const input = document.createElement("input");
+      input.type = type;
+      if (autocomplete) input.setAttribute("autocomplete", autocomplete);
+      input.value = "//secret";
+      document.body.append(input);
+      const translateText = vi.fn().mockResolvedValue("unused");
+      const dispose = init(context(translateText));
 
-    pressEnter(input);
-    await Promise.resolve();
+      pressEnter(input);
+      await Promise.resolve();
 
-    expect(translateText).not.toHaveBeenCalled();
-    expect(input.value).toBe("//secret");
-    dispose();
-  });
+      expect(translateText).not.toHaveBeenCalled();
+      expect(input.value).toBe("//secret");
+      dispose();
+    },
+  );
 });

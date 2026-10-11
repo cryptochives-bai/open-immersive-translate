@@ -400,3 +400,105 @@ test("loads the side panel and round-trips text through the mock service", async
     await context.close();
   }
 });
+
+test("ignores page-forged input, UI clicks, and frame commands", async ({
+  playwright,
+}) => {
+  const { context, worker } = await launchExtension(playwright);
+  try {
+    await selectMockService(worker);
+    await worker.evaluate(async () => {
+      const api = (globalThis as unknown as ExtensionWorkerGlobal).chrome;
+      const { config } = (await api.storage.local.get("config")) as {
+        config: Record<string, unknown>;
+      };
+      await api.storage.local.set({
+        config: {
+          ...config,
+          input: {
+            ...(config.input as Record<string, unknown>),
+            enabled: true,
+          },
+          floatBall: { enabled: true, position: "right" },
+        },
+      });
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/article.html`);
+    await expect
+      .poll(() => contentState(worker))
+      .toMatchObject({ ready: true });
+    await page.evaluate(() => {
+      for (const id of ["probe", "chat", "real"]) {
+        const field = document.createElement("input");
+        field.id = id;
+        document.body.append(field);
+      }
+    });
+
+    // Extension UI lives in closed shadow roots the page cannot reach.
+    await expect(page.locator("[data-imt='float-ball']")).toHaveCount(1);
+    expect(
+      await page.evaluate(
+        () => document.querySelector("[data-imt='float-ball']")?.shadowRoot,
+      ),
+    ).toBeNull();
+
+    // A page-dispatched Enter must not drive the user's translation service.
+    await page.evaluate(() => {
+      const probe = document.getElementById("probe") as HTMLInputElement;
+      probe.value = "//forged by the page";
+      probe.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    // Real typing: a chat slash command is left alone, "//" translates.
+    await page.locator("#chat").click();
+    await page.keyboard.type("/remind me later");
+    await page.keyboard.press("Enter");
+    await page.locator("#real").click();
+    await page.keyboard.type("//hello");
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator("#real")).toHaveValue("[zh] hello");
+    await expect(page.locator("#chat")).toHaveValue("/remind me later");
+    await expect(page.locator("#probe")).toHaveValue("//forged by the page");
+
+    // A frame ignores commands the embedding page forges with postMessage...
+    await page.evaluate((frameUrl) => {
+      const frame = document.createElement("iframe");
+      frame.id = "child";
+      frame.src = frameUrl;
+      document.body.append(frame);
+    }, `${origin}/child.html`);
+    const child = page.frameLocator("#child");
+    await expect(child.locator("article > p").first()).toBeVisible();
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const frame = document.getElementById("child") as HTMLIFrameElement;
+      frame.contentWindow?.postMessage(
+        {
+          channel: "imt:page-controller",
+          kind: "command",
+          command: "toggleTranslateTheWholePage",
+        },
+        "*",
+      );
+    });
+    await page.waitForTimeout(1_000);
+    await expect(child.locator("font[data-imt='target']")).toHaveCount(0);
+
+    // ...but still follows commands the extension sends to every frame.
+    await expect.poll(() => toggleActivePage(worker)).toBe(true);
+    await expect
+      .poll(() => child.locator("article > p font[data-imt='target']").count())
+      .toBeGreaterThan(0);
+  } finally {
+    await context.close();
+  }
+});

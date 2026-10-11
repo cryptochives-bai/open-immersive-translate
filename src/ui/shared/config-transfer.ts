@@ -9,7 +9,7 @@ export type ConfigImportResult =
 
 export function serializeConfig(
   config: Config | KConfig,
-  redactApiKeys: boolean,
+  redactSecrets: boolean,
 ): string {
   const services = Object.fromEntries(
     Object.entries(config.services).map(([id, service]) => {
@@ -20,7 +20,7 @@ export function serializeConfig(
       delete copy.access_token;
       delete copy.refresh_token;
       delete copy.id_token;
-      if (redactApiKeys) {
+      if (redactSecrets) {
         for (const key of Object.keys(copy)) {
           if (isSecretServiceField(key)) delete copy[key];
         }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergePageStates, pageTranslationState } from "../../src/content/controller/page-state";
+import { mergePageStates, pageTranslationState } from "../../src/shared/page-state";
 
 describe("page translation state", () => {
   it("reports idle, translating, done, and error states with counts", () => {

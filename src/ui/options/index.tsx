@@ -1262,7 +1262,7 @@ function ShortcutsPanel(): preact.JSX.Element {
 function DataPanel({ config, onPatch }: PanelProps): preact.JSX.Element {
   const [cacheCount, setCacheCount] = useState<number>();
   const [cacheStatus, setCacheStatus] = useState<string>();
-  const [redactApiKeys, setRedactApiKeys] = useState(true);
+  const [redactSecrets, setRedactSecrets] = useState(true);
   const [importStatus, setImportStatus] = useState<{
     ok: boolean;
     message: string;
@@ -1289,7 +1289,7 @@ function DataPanel({ config, onPatch }: PanelProps): preact.JSX.Element {
   };
 
   const download = (): void => {
-    const blob = new Blob([serializeConfig(config, redactApiKeys)], {
+    const blob = new Blob([serializeConfig(config, redactSecrets)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -1371,10 +1371,10 @@ function DataPanel({ config, onPatch }: PanelProps): preact.JSX.Element {
         <label class="checkbox-row">
           <input
             type="checkbox"
-            checked={redactApiKeys}
-            onChange={(event) => setRedactApiKeys(event.currentTarget.checked)}
+            checked={redactSecrets}
+            onChange={(event) => setRedactSecrets(event.currentTarget.checked)}
           />
-          <span>{t("data.redactApiKeys")}</span>
+          <span>{t("data.redactSecrets")}</span>
         </label>
         <Button onClick={download}>{t("data.exportButton")}</Button>
       </Card>

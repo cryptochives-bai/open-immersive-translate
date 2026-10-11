@@ -13,7 +13,10 @@ export function attachPrivateShadow(host: Element): ShadowRoot {
   return root;
 }
 
-/** Return the closed root that {@link attachPrivateShadow} created for `host`. */
+/**
+ * Return the closed root that {@link attachPrivateShadow} created for `host`.
+ * Extension code keeps its own references; this lookup exists for tests.
+ */
 export function privateShadowRoot(
   host: Element | null | undefined,
 ): ShadowRoot | null {

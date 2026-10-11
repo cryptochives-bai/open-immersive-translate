@@ -57,7 +57,7 @@ import {
   isNeverTranslateSite,
   shouldAutoTranslatePage,
 } from "./patterns";
-import { pageTranslationState } from "./page-state";
+import { pageTranslationState } from "../../shared/page-state";
 import type { PageControllerActions } from "./commands";
 
 const PLACEHOLDER_STYLE = { open: "{", close: "}" } as const;

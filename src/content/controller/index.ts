@@ -22,9 +22,8 @@ import { init as initSearchEnhancement } from "../features/search-enhancement";
 import { initSubtitles } from "../features/subtitle";
 import { onUrlChange } from "../observe/url-change";
 import { isPageCommandId, runPageCommand } from "./commands";
-import { frameHasEnoughText } from "./frame-sync";
 import { controllerT } from "./i18n";
-import { isNeverTranslateSite } from "./patterns";
+import { frameHasEnoughText, isNeverTranslateSite } from "./patterns";
 import { TranslationController } from "./translation-controller";
 
 export { TranslationController } from "./translation-controller";

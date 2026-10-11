@@ -1,5 +1,5 @@
 /** Input types whose content is free text worth translating. */
-const TEXT_INPUT_TYPES = new Set(["", "text", "search"]);
+const TEXT_INPUT_TYPES = new Set(["text", "search"]);
 /** Autofill hints that mark credentials, one-time codes, and payment data. */
 const SENSITIVE_AUTOCOMPLETE =
   /\b(?:current-password|new-password|one-time-code|cc-[a-z-]+)\b/i;

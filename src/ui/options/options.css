@@ -193,8 +193,7 @@ body {
 }
 
 .chatgpt-auth-account,
-.chatgpt-auth-account dl,
-.chatgpt-auth-field details {
+.chatgpt-auth-account dl {
   display: grid;
   gap: 10px;
 }
@@ -212,17 +211,6 @@ body {
 .chatgpt-auth-account dd {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.chatgpt-auth-field summary {
-  color: var(--ui-accent);
-  cursor: pointer;
-}
-
-.chatgpt-auth-field textarea {
-  min-height: 120px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
 }
 
 .password-field {

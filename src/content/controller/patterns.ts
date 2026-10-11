@@ -118,3 +118,11 @@ export function glossaryForDomain(
     })
     .map(({ k, v, domain }) => ({ k, v, ...(domain ? { domain } : {}) }));
 }
+
+/** Subframes get a controller only when they hold enough text to matter. */
+export function frameHasEnoughText(doc: Document, minimum = 50): boolean {
+  const length = (doc.body?.textContent ?? "")
+    .replace(/\s+/g, " ")
+    .trim().length;
+  return length >= Math.max(0, minimum);
+}

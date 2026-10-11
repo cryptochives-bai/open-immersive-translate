@@ -5,6 +5,7 @@ import {
   resolveTranslationMode,
   resolveTranslationTheme,
   shouldAutoTranslatePage,
+  frameHasEnoughText,
 } from "../../src/content/controller/patterns";
 import type { AdvancedPageConfig, AdvancedPageRule } from "../../src/shared/j-types";
 
@@ -90,5 +91,14 @@ describe("page behavior patterns", () => {
       "api.shop.example.com",
     );
     expect(entries.map(({ k }) => k)).toEqual(["global", "shop"]);
+  });
+});
+
+describe("iframe controller gating", () => {
+  it("requires the configured amount of frame text", () => {
+    document.body.textContent = "short";
+    expect(frameHasEnoughText(document, 10)).toBe(false);
+    document.body.textContent = "enough frame text";
+    expect(frameHasEnoughText(document, 10)).toBe(true);
   });
 });

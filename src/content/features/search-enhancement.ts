@@ -25,14 +25,20 @@ function matchesHostname(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
+/**
+ * Google's search front ends: google.com, google.<cc>, google.co.<cc>, and
+ * google.com.<cc>. Any other single-label suffix (google.xyz, google.app)
+ * can be registered by someone else, and this feature sends the query text
+ * to the translation service as soon as such a page loads.
+ */
 function matchesGoogleHostname(hostname: string): boolean {
-  const match = hostname.match(/(?:^|\.)google\.([a-z.]+)$/i);
-  if (!match) return false;
-  const suffix = match[1]?.split(".") ?? [];
-  return (
-    suffix.length === 1 || (suffix.length === 2 && suffix[1]?.length === 2)
+  return /(?:^|\.)google\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/i.test(
+    hostname,
   );
 }
+
+/** Longest query this feature translates without the user asking. */
+const MAX_QUERY_LENGTH = 500;
 
 /** Read a supported search engine and its current query from a result URL. */
 export function getSearchPage(url: URL): SearchPage | null {
@@ -187,7 +193,9 @@ export function init(ctx: FeatureContext): () => void {
 
   if (
     config.searchEnhancement?.enabled === true &&
+    window.top === window &&
     page &&
+    page.query.length <= MAX_QUERY_LENGTH &&
     isTargetLanguageQuery(page.query, ctx.config.targetLanguage)
   ) {
     void ctx

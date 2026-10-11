@@ -61,6 +61,16 @@ describe("search page detection", () => {
     expect(
       getSearchPage(new URL("https://google.com.example/search?q=heart")),
     ).toBeNull();
+    for (const host of ["google.xyz", "www.google.app", "google.example.com"]) {
+      expect(
+        getSearchPage(new URL(`https://${host}/search?q=heart`)),
+      ).toBeNull();
+    }
+    for (const host of ["www.google.de", "www.google.com.tw", "google.co.jp"]) {
+      expect(
+        getSearchPage(new URL(`https://${host}/search?q=heart`)),
+      ).not.toBeNull();
+    }
   });
 });
 

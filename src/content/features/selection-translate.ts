@@ -6,6 +6,7 @@ import {
 import type { LangCode } from "../../shared/types";
 import { setUiLocaleOverride, t } from "../../ui/shared/i18n";
 import { featureBus, TRANSLATE_SELECTION_EVENT } from "./bus";
+import { controlLooksUntampered, trackOcclusion } from "./clickjack-guard";
 import type { FeatureContext } from "./context";
 import { attachPrivateShadow } from "./private-shadow";
 import { isUserEvent } from "./trusted";
@@ -94,10 +95,13 @@ export function init(
   const speech = options.speech ?? globalThis.speechSynthesis;
 
   let host: HTMLDivElement | null = null;
+  let stopOcclusion: (() => void) | undefined;
   let requestNumber = 0;
 
   const close = (): void => {
     requestNumber += 1;
+    stopOcclusion?.();
+    stopOcclusion = undefined;
     host?.remove();
     host = null;
   };
@@ -221,8 +225,16 @@ export function init(
         });
     };
 
+    const occlusion = trackOcclusion(trigger);
+    stopOcclusion = occlusion.disconnect;
     const translateOnUserEvent = (event: Event): void => {
-      if (isUserEvent(event)) translate();
+      if (
+        isUserEvent(event) &&
+        controlLooksUntampered(trigger, selectionHost, { min: 20, max: 48 }) &&
+        occlusion.isVisible()
+      ) {
+        translate();
+      }
     };
     trigger.addEventListener("click", translateOnUserEvent);
     if (config.selection.triggerMode === "icon-hover") {

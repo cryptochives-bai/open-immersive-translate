@@ -1,6 +1,7 @@
 import browser from "webextension-polyfill";
 
 import { sendToBackground } from "../../shared/messages";
+import { controlLooksUntampered, trackOcclusion } from "./clickjack-guard";
 import type { FeatureContext } from "./context";
 import { attachPrivateShadow } from "./private-shadow";
 import { isUserEvent } from "./trusted";
@@ -104,6 +105,8 @@ export function init(ctx: FeatureContext): () => void {
   button.setAttribute("aria-pressed", String(ctx.isTranslated()));
   host.dataset.side = ctx.config.floatBall.position;
   document.documentElement.append(host);
+  const ballOcclusion = trackOcclusion(button);
+  const menuOcclusion = trackOcclusion(menu);
 
   let disposed = false;
   let positionTouched = false;
@@ -184,6 +187,12 @@ export function init(ctx: FeatureContext): () => void {
 
   const onClick = (event: MouseEvent): void => {
     if (!isUserEvent(event)) return;
+    if (
+      !controlLooksUntampered(button, host, { min: 24, max: 56 }) ||
+      !ballOcclusion.isVisible()
+    ) {
+      return;
+    }
     if (suppressClick) {
       suppressClick = false;
       return;
@@ -203,6 +212,12 @@ export function init(ctx: FeatureContext): () => void {
     if (!isUserEvent(event)) return;
     const target = event.target;
     if (!(target instanceof HTMLButtonElement)) return;
+    if (
+      !controlLooksUntampered(target, host, { min: 12, max: 400 }) ||
+      !menuOcclusion.isVisible()
+    ) {
+      return;
+    }
     const action = target.dataset.action;
     closeMenu();
 
@@ -254,6 +269,8 @@ export function init(ctx: FeatureContext): () => void {
 
   return () => {
     disposed = true;
+    ballOcclusion.disconnect();
+    menuOcclusion.disconnect();
     button.removeEventListener("pointerdown", onPointerDown);
     button.removeEventListener("click", onClick);
     button.removeEventListener("contextmenu", onContextMenu);

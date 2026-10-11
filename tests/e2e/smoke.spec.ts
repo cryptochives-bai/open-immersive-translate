@@ -646,6 +646,37 @@ test("an invisible, enlarged float ball does not turn a click into page translat
     await page.waitForTimeout(1_500);
 
     await expect(page.locator("font[data-imt='target']")).toHaveCount(0);
+
+    // Control: once the page stops tampering, a real click on the ball works.
+    await page.evaluate(() =>
+      document.querySelectorAll("style").forEach((style) => {
+        if (style.textContent?.includes("float-ball")) style.remove();
+      }),
+    );
+    await page.waitForTimeout(300);
+    const ball = (await page.locator("[data-imt='float-ball']").boundingBox())!;
+    expect(ball.width).toBeLessThan(60);
+
+    // An opaque page overlay that lets clicks through hides the ball.
+    await page.evaluate((box) => {
+      const cover = document.createElement("div");
+      cover.id = "cover";
+      cover.textContent = "Accept";
+      cover.style.cssText = `position:fixed;left:${box.x - 20}px;top:${box.y - 20}px;width:${box.width + 40}px;height:${box.height + 40}px;background:#fff;z-index:2147483647;pointer-events:none`;
+      // After the ball in tree order, so it paints on top at equal z-index.
+      document.documentElement.append(cover);
+    }, ball);
+    await page.waitForTimeout(500);
+    await page.mouse.click(ball.x + ball.width / 2, ball.y + ball.height / 2);
+    await page.waitForTimeout(1_500);
+    await expect(page.locator("font[data-imt='target']")).toHaveCount(0);
+    await page.evaluate(() => document.getElementById("cover")?.remove());
+    await page.waitForTimeout(500);
+
+    await page.mouse.click(ball.x + ball.width / 2, ball.y + ball.height / 2);
+    await expect
+      .poll(() => page.locator("article > p font[data-imt='target']").count())
+      .toBeGreaterThan(0);
   } finally {
     await context.close();
   }

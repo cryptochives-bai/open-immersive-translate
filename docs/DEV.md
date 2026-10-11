@@ -295,13 +295,14 @@ content 请求 N 段
   → 查缓存，命中的直接返回
   → 未命中的按服务的 maxBatchSize/maxBatchChars 分批
   → 进入该服务的队列，按 concurrency 和 rps 出队
-  → 失败重试 1 次（指数退避），仍失败走 fallback
+  → 网络错误重试 1 次（250ms）；429 按 Retry-After（无头部时 1 秒）等待并暂停该服务整条队列，超过 60 秒直接失败；标记 retryable:false 的错误不重试；仍失败走 fallback
   → 结果写缓存，逐批回传 content（不等全部完成）
 ```
 
 - 优先级：视口内的段落优先，用户悬停的段落插队。
 - 页面关闭或用户取消翻译时 `AbortController` 取消该 tab 所有请求。
-- 缓存 key：`sha1(serviceId + from + to + text)`，value 存译文和时间戳，默认保留 30 天，启动时清理。
+- 缓存 key：`sha1(serviceId + from + to + text)`，value 存译文和时间戳，默认保留 30 天，由每日 alarm（及安装/更新时）清理。
+- 设置里关闭缓存时既不读也不写；来自无痕标签页（`sender.tab.incognito`）的请求不读写持久缓存。
 
 ### 5.5 译文渲染
 
@@ -364,7 +365,9 @@ interface Rule {
 
 - 监听 `input`/`textarea`/`contenteditable` 的 keydown。
 - 触发：内容以 `//` 开头，或末尾连续 3 个空格（`inputTrailingTriggerKey`，超时 1.5 秒重置）。
-- 可在开头写语言码指定目标语言：`/en 你好` → 翻成英文。
+- 可在开头写语言别名指定目标语言：`//en 你好` → 翻成英文。只认别名表（`languageAliases`）里的写法，避免把 `//how are you` 的 `how` 当成语言码。
+- 跳过 `type=password` 等非文本输入框，以及 autocomplete 标为密码、一次性验证码、信用卡的字段。
+- 只响应 `isTrusted` 的真实按键，页面脚本派发的事件一律忽略。
 - 翻译期间禁用输入框，结果用 `document.execCommand('insertText')` 替换（保留撤销栈），contenteditable 用 Selection API。
 - 超过 200 字符弹确认（沉浸式翻译 `confirmLongTextLength`）。
 

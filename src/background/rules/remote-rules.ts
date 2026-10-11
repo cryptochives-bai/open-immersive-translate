@@ -56,11 +56,45 @@ const REMOTE_RULE_BLOCKED_FIELDS = [
   "autoTranslate",
   "injectedCss",
   "additionalInjectedCss",
+  // These replace the default exclusion lists (which keep editors and
+  // scripts out of translation); feeds may only extend them via additional*.
+  "excludeSelectors",
+  "excludeTags",
 ] as const;
+
+/** Every glossary entry is sent with every AI translation request. */
+const MAX_REMOTE_GLOSSARY_ENTRIES = 200;
+const MAX_REMOTE_GLOSSARY_CHARS = 20_000;
+const MAX_REMOTE_GLOB_LENGTH = 512;
+
+function capGlossary(entries: unknown): unknown[] | undefined {
+  if (!Array.isArray(entries)) return undefined;
+  const kept: unknown[] = [];
+  let chars = 0;
+  for (const entry of entries.slice(0, MAX_REMOTE_GLOSSARY_ENTRIES)) {
+    chars += JSON.stringify(entry).length;
+    if (chars > MAX_REMOTE_GLOSSARY_CHARS) break;
+    kept.push(entry);
+  }
+  return kept;
+}
 
 export function sanitizeRemoteRule(rule: Rule): Rule {
   const copy: Record<string, unknown> = { ...rule };
   for (const field of REMOTE_RULE_BLOCKED_FIELDS) delete copy[field];
+  for (const field of ["glossaries", "additionalGlossaries"] as const) {
+    const capped = capGlossary(copy[field]);
+    if (capped) copy[field] = capped;
+  }
+  for (const field of ["matches", "excludeMatches"] as const) {
+    const globs = copy[field];
+    if (Array.isArray(globs)) {
+      copy[field] = globs.filter(
+        (glob) =>
+          typeof glob === "string" && glob.length <= MAX_REMOTE_GLOB_LENGTH,
+      );
+    }
+  }
   return copy as unknown as Rule;
 }
 

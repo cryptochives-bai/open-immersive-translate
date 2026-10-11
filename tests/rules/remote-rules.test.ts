@@ -129,6 +129,28 @@ describe("remote rules", () => {
     expect(parsed).not.toHaveProperty("additionalInjectedCss");
     expect(parsed).toMatchObject({ selectors: ["article"] });
 
+    const [bounded] = parseRemoteRulePayload([
+      {
+        ...remoteRule,
+        matches: [...remoteRule.matches, `https://*/${"*".repeat(600)}`],
+        excludeSelectors: [],
+        excludeTags: [],
+        additionalExcludeSelectors: [".ad"],
+        glossaries: Array.from({ length: 1_000 }, (_, index) => ({
+          k: `term${index}`,
+          v: "x".repeat(200),
+        })),
+      },
+    ]);
+    expect(bounded).not.toHaveProperty("excludeSelectors");
+    expect(bounded).not.toHaveProperty("excludeTags");
+    expect(bounded).toMatchObject({ additionalExcludeSelectors: [".ad"] });
+    expect(bounded!.matches).toEqual(remoteRule.matches);
+    expect(bounded!.glossaries!.length).toBeLessThan(200);
+    expect(JSON.stringify(bounded!.glossaries).length).toBeLessThanOrEqual(
+      20_200,
+    );
+
     // A feed cached before the filter existed is sanitized when read back.
     state.stored[REMOTE_RULES_STORAGE_KEY] = {
       version: 1,

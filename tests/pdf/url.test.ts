@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isPdfUrl,
+  mayLoadFileFromQuery,
   normalizePdfUrl,
   pdfReaderUrl,
   pdfUrlFromLocation,
@@ -41,6 +42,16 @@ describe("PDF URL helpers", () => {
       ),
     ).toBe(
       "chrome-extension://abc/src/pdf/index.html?file=https%3A%2F%2Fexample.com%2Freport.pdf%3Fx%3D1%26y%3D2",
+    );
+  });
+});
+
+describe("embedded reader", () => {
+  it("only auto-loads ?file= when it is the top-level page", () => {
+    const top = window;
+    expect(mayLoadFileFromQuery({ top, self: top })).toBe(true);
+    expect(mayLoadFileFromQuery({ top, self: {} as typeof window })).toBe(
+      false,
     );
   });
 });

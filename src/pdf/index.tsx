@@ -29,7 +29,7 @@ import {
 import { PdfPageView } from "./page";
 import { PdfTranslationClient } from "./translation";
 import type { PdfTranslationState, PositionedPdfParagraph } from "./types";
-import { pdfUrlFromLocation } from "./url";
+import { mayLoadFileFromQuery, pdfUrlFromLocation } from "./url";
 import "../content/render/themes.css";
 import "./styles.css";
 
@@ -129,6 +129,10 @@ export function PdfReader(): preact.JSX.Element {
   useEffect(() => {
     const sourceUrl = pdfUrlFromLocation(window.location);
     if (!sourceUrl) return;
+    if (!mayLoadFileFromQuery(window)) {
+      setStatus({ kind: "error", text: pdfT("embeddedBlocked") });
+      return;
+    }
     void fetchPdfFile(sourceUrl)
       .then((bytes) => openPdf(bytes, filenameFromUrl(sourceUrl)))
       .catch((cause: unknown) => {

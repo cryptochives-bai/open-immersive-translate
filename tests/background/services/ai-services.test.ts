@@ -122,7 +122,9 @@ describe("phase-3 AI services", () => {
 
     expect(result.texts).toEqual(["你好"]);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/models/gemini-test:generateContent?key=gemini-key");
+    expect(url).toContain("/models/gemini-test:generateContent");
+    expect(url).not.toContain("gemini-key");
+    expect(new Headers(init.headers).get("x-goog-api-key")).toBe("gemini-key");
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).toHaveProperty("system_instruction");
     expect(JSON.stringify(body)).toContain("- id: 1");

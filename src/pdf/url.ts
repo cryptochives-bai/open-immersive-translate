@@ -37,6 +37,18 @@ export function isPdfUrl(value: string): boolean {
   );
 }
 
+/**
+ * The reader is a web-accessible resource, so any site can frame it with a
+ * `?file=` of its choosing and make the extension fetch that URL with its
+ * <all_urls> host access, then auto-translate it. The extension itself only
+ * opens the reader as a top-level tab.
+ */
+export function mayLoadFileFromQuery(
+  win: Pick<Window, "top" | "self">,
+): boolean {
+  return win.top === win.self;
+}
+
 export function pdfUrlFromLocation(
   location: Pick<Location, "search">,
 ): string | undefined {

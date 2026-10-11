@@ -16,6 +16,8 @@ const zhCN = {
   download: "下载双语 PDF",
   loading: "正在加载 PDF…",
   loadFailed: "无法打开 PDF：{message}",
+  embeddedBlocked:
+    "阅读器被嵌入在其他网页中，已拒绝自动加载 PDF。请直接打开 PDF 链接。",
   empty: "打开本地文件，或使用带 ?file= 的 PDF 地址。",
   rendering: "正在渲染第 {page} 页…",
   pageFailed: "第 {page} 页渲染失败",
@@ -45,6 +47,8 @@ const en: Record<PdfI18nKey, string> = {
   download: "Download bilingual PDF",
   loading: "Loading PDF…",
   loadFailed: "Could not open PDF: {message}",
+  embeddedBlocked:
+    "The reader is embedded in another page, so it will not load the PDF automatically. Open the PDF link directly.",
   empty: "Open a local file or pass a PDF URL with ?file=.",
   rendering: "Rendering page {page}…",
   pageFailed: "Could not render page {page}",

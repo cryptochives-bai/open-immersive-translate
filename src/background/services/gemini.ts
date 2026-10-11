@@ -121,6 +121,14 @@ export class GeminiService extends BaseService {
     return this.runAssistant(request, signal);
   }
 
+  /** Send the key as a header; a ?key= query lands in proxy and gateway logs. */
+  private requestHeaders(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      ...(this.apiKey ? { "x-goog-api-key": this.apiKey } : {}),
+    };
+  }
+
   private async runAssistant(
     request: AssistantRequest,
     signal: AbortSignal,
@@ -129,14 +137,13 @@ export class GeminiService extends BaseService {
     const method = this.stream ? "streamGenerateContent" : "generateContent";
     const params = new URLSearchParams();
     if (this.stream) params.set("alt", "sse");
-    if (this.apiKey) params.set("key", this.apiKey);
     const query = params.size ? `?${params}` : "";
     const url = `${this.baseUrl.replace(/\/+$/, "")}/models/${encodeURIComponent(this.model)}:${method}${query}`;
     const response = await fetchWithTimeout(
       url,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.requestHeaders(),
         body: JSON.stringify({
           system_instruction: {
             parts: [{ text: assistantInstruction(request) }],
@@ -205,14 +212,13 @@ export class GeminiService extends BaseService {
     const method = this.stream ? "streamGenerateContent" : "generateContent";
     const params = new URLSearchParams();
     if (this.stream) params.set("alt", "sse");
-    if (this.apiKey) params.set("key", this.apiKey);
     const query = params.size ? `?${params}` : "";
     const url = `${this.baseUrl.replace(/\/+$/, "")}/models/${encodeURIComponent(this.model)}:${method}${query}`;
     const response = await fetchWithTimeout(
       url,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.requestHeaders(),
         body: JSON.stringify({
           system_instruction: {
             parts: [

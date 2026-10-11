@@ -158,4 +158,51 @@ describe("SubtitleEngine", () => {
     expect(userIsWatching({ paused: false }, false)).toBe(false);
     expect(userIsWatching({ paused: false }, true)).toBe(true);
   });
+
+  it("does not charge the budget again for cues still in flight", async () => {
+    let now = 0;
+    const budget = new CueBudget(10_000);
+    const take = vi.spyOn(budget, "take");
+    const translateText = vi.fn(() => new Promise<string>(() => undefined));
+    const engine = new SubtitleEngine(context(translateText), {
+      now: () => now,
+      budget,
+    });
+    await engine.load(
+      Array.from({ length: 5 }, (_, index) => ({
+        start: index,
+        end: index + 0.9,
+        text: `Slow ${index}.`,
+      })),
+    );
+
+    void engine.updateCurrentTime(0);
+    now += WINDOW_INTERVAL_MS;
+    void engine.updateCurrentTime(1);
+
+    expect(take.mock.calls.map(([requested]) => requested)).toEqual([5, 0]);
+    expect(translateText).toHaveBeenCalledTimes(5);
+  });
+
+  it("pre-translates in capped, budgeted steps", async () => {
+    let now = 0;
+    const translateText = vi.fn(async (text: string) => `译:${text}`);
+    const engine = new SubtitleEngine(context(translateText), {
+      preTranslation: true,
+      now: () => now,
+      budget: new CueBudget(45),
+    });
+    await engine.load(
+      Array.from({ length: 300 }, (_, index) => ({
+        start: index,
+        end: index + 0.9,
+        text: `Track ${index}.`,
+      })),
+    );
+    expect(translateText).toHaveBeenCalledTimes(MAX_WINDOW_CUES);
+
+    now += WINDOW_INTERVAL_MS;
+    await engine.updateCurrentTime(0);
+    expect(translateText).toHaveBeenCalledTimes(45);
+  });
 });

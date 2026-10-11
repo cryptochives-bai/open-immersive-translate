@@ -142,6 +142,7 @@ export class SubtitleEngine {
   private readonly now: () => number;
   private readonly budget: CueBudget;
   private lastWindowAt = -Infinity;
+  private currentTime = 0;
   private readonly listeners = new Set<
     (cues: readonly BilingualSubtitleCue[]) => void
   >();
@@ -179,42 +180,55 @@ export class SubtitleEngine {
   }
 
   async load(input: readonly SubtitleCue[]): Promise<void> {
-    const generation = ++this.generation;
+    this.generation += 1;
     this.cues = batchCueSentences(input).map((cue, index) => ({
       ...cue,
       id: cue.id ?? `subtitle-${index + 1}`,
     }));
     this.emit();
-    if (this.preTranslation) {
-      await this.translateIndices(
-        this.cues.map((_, index) => index),
-        generation,
-      );
-    }
+    if (this.preTranslation) await this.translateUpcoming(true);
   }
 
   async setPreTranslation(enabled: boolean): Promise<void> {
     this.preTranslation = enabled;
-    if (enabled) {
-      await this.translateIndices(
-        this.cues.map((_, index) => index),
-        this.generation,
-      );
-    }
+    if (enabled) await this.translateUpcoming(true);
   }
 
   async updateCurrentTime(currentTime: number): Promise<void> {
-    if (this.preTranslation) return;
+    this.currentTime = currentTime;
+    await this.translateUpcoming(false);
+  }
+
+  /**
+   * Translate the next cues from the playback position: the rolling window,
+   * or with pre-translation the rest of the track. Either way at most
+   * MAX_WINDOW_CUES / MAX_WINDOW_CHARS per call and once a second (an
+   * explicit toggle may skip the wait), charged to the shared page budget.
+   * Cues already cached, in flight, or cooling down are not charged again.
+   */
+  private async translateUpcoming(force: boolean): Promise<void> {
     const now = this.now();
-    if (now - this.lastWindowAt < WINDOW_INTERVAL_MS) return;
+    if (!force && now - this.lastWindowAt < WINDOW_INTERVAL_MS) return;
     this.lastWindowAt = now;
 
-    const windowEnd = currentTime + this.rollingWindowSeconds;
+    const start = this.currentTime;
+    const windowEnd = this.preTranslation
+      ? Infinity
+      : start + this.rollingWindowSeconds;
     const indices: number[] = [];
     let chars = 0;
+    let filled = false;
     for (const [index, cue] of this.cues.entries()) {
-      if (cue.end < currentTime || cue.start > windowEnd) continue;
+      if (cue.end < start || cue.start > windowEnd) continue;
       if (cue.translation !== undefined) continue;
+      const key = this.keyFor(cue.text);
+      const cached = this.cache.get(key);
+      if (cached !== undefined) {
+        cue.translation = cached;
+        filled = true;
+        continue;
+      }
+      if (this.inFlight.has(key) || this.coolingDown(key, now)) continue;
       if (
         indices.length >= MAX_WINDOW_CUES ||
         chars + cue.text.length > MAX_WINDOW_CHARS
@@ -224,8 +238,19 @@ export class SubtitleEngine {
       indices.push(index);
       chars += cue.text.length;
     }
+    if (filled) this.emit();
     const granted = this.budget.take(indices.length, now);
     await this.translateIndices(indices.slice(0, granted), this.generation);
+  }
+
+  private keyFor(text: string): string {
+    const { sourceLanguage, targetLanguage } = this.ctx.config;
+    return `${sourceLanguage}\u0000${targetLanguage}\u0000${text}`;
+  }
+
+  private coolingDown(key: string, now: number): boolean {
+    const failed = this.failedAt.get(key);
+    return failed !== undefined && now - failed < FAILED_CUE_RETRY_MS;
   }
 
   activeCue(currentTime: number): BilingualSubtitleCue | undefined {
@@ -282,13 +307,12 @@ export class SubtitleEngine {
   private translate(text: string): Promise<string> {
     const from = this.ctx.config.sourceLanguage;
     const to = this.ctx.config.targetLanguage;
-    const key = `${from}\u0000${to}\u0000${text}`;
+    const key = this.keyFor(text);
     const cached = this.cache.get(key);
     if (cached !== undefined) return Promise.resolve(cached);
     const pending = this.inFlight.get(key);
     if (pending) return pending;
-    const failed = this.failedAt.get(key);
-    if (failed !== undefined && this.now() - failed < FAILED_CUE_RETRY_MS) {
+    if (this.coolingDown(key, this.now())) {
       return Promise.reject(new Error("Subtitle cue is cooling down."));
     }
 
